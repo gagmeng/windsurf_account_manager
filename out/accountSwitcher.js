@@ -211,6 +211,31 @@ class AccountSwitcher {
                 result.email = authStatus.email || '';
                 result.planName = authStatus.planName || '';
             }
+            // 从 userStatusProtoBinaryBase64 解析 email 和 name
+            if (authStatus && authStatus.userStatusProtoBinaryBase64 && (!result.email || !result.name)) {
+                try {
+                    const raw = Buffer.from(authStatus.userStatusProtoBinaryBase64, 'base64').toString('utf-8');
+                    // 提取 email（匹配 xxx@xxx.xxx 模式）
+                    if (!result.email) {
+                        const emailMatch = raw.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-z]{2,6}/);
+                        if (emailMatch) {
+                            result.email = emailMatch[0];
+                            console.log(`[AccountSwitcher] 从 userStatus 提取到 email: ${result.email}`);
+                        }
+                    }
+                    // 提取 name（protobuf 中 name 通常在前几个字节，field tag 0x1a = string）
+                    if (!result.name) {
+                        // name 在 protobuf 中靠前位置，取第一个可读 ASCII 字符串片段
+                        const nameMatch = raw.match(/^[\x00-\x1f]*([\x20-\x7e]{2,})/);
+                        if (nameMatch && !nameMatch[1].includes('@')) {
+                            result.name = nameMatch[1].trim();
+                            console.log(`[AccountSwitcher] 从 userStatus 提取到 name: ${result.name}`);
+                        }
+                    }
+                } catch (e) {
+                    console.error('[AccountSwitcher] 解析 userStatusProtoBinaryBase64 失败:', e);
+                }
+            }
             // 从 codeium.windsurf 读取配置
             const codeiumConfig = await databaseHelper_1.DatabaseHelper.readFromDB('codeium.windsurf');
             if (codeiumConfig) {

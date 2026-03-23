@@ -75,24 +75,27 @@ async function activate(context) {
     setTimeout(async () => {
         try {
             const currentAccount = await accountSwitcher.getCurrentAccount();
-            if (currentAccount && currentAccount.email && currentAccount.apiKey) {
+            if (currentAccount && currentAccount.apiKey) {
+                // 如果 email 为空，用 name 或占位符代替
+                const emailToUse = currentAccount.email || (currentAccount.name ? `${currentAccount.name.replace(/\s+/g, '.')}@unknown` : 'unknown@unknown');
+                const nameToUse = currentAccount.name || (currentAccount.email ? currentAccount.email.split('@')[0] : 'Unknown');
                 const accounts = await accountManager.getAccounts();
                 // 按 API Key 匹配已有账号
                 const existingByKey = accounts.find(acc => acc.apiKey === currentAccount.apiKey);
                 if (existingByKey) {
-                    // API Key 相同但邮箱变了，更新邮箱
-                    if (existingByKey.email !== currentAccount.email) {
+                    // API Key 相同但信息变了，更新
+                    if (existingByKey.email !== emailToUse || existingByKey.name !== nameToUse) {
                         await accountManager.updateAccount(existingByKey.id, {
-                            email: currentAccount.email,
-                            name: currentAccount.name || currentAccount.email.split('@')[0]
+                            email: emailToUse,
+                            name: nameToUse
                         });
-                        console.log(`[AceSwitch] 已更新账号邮箱: ${existingByKey.email} -> ${currentAccount.email}`);
+                        console.log(`[AceSwitch] 已更新账号信息: ${existingByKey.email} -> ${emailToUse}`);
                         panelProvider.refresh();
                     }
                 }
                 else {
                     // 按邮箱也找不到，新增账号
-                    const existingByEmail = accounts.some(acc => acc.email === currentAccount.email);
+                    const existingByEmail = accounts.some(acc => acc.email === emailToUse);
                     if (!existingByEmail) {
                         const planNameStr = currentAccount.planName || '';
                         const derivedType = planNameStr.toLowerCase() === 'trial' ? 'trial'
@@ -101,15 +104,15 @@ async function activate(context) {
                             : planNameStr.toLowerCase() === 'enterprise' ? 'enterprise'
                             : '';
                         await accountManager.addAccount({
-                            email: currentAccount.email,
-                            name: currentAccount.name || currentAccount.email.split('@')[0],
+                            email: emailToUse,
+                            name: nameToUse,
                             apiKey: currentAccount.apiKey,
                             apiServerUrl: currentAccount.apiServerUrl || 'https://server.self-serve.windsurf.com',
                             refreshToken: '',
                             planName: planNameStr,
                             accountType: derivedType
                         });
-                        console.log(`[AceSwitch] 已自动导入当前账号: ${currentAccount.email}`);
+                        console.log(`[AceSwitch] 已自动导入当前账号: ${emailToUse}`);
                         panelProvider.refresh();
                     }
                 }
