@@ -1,0 +1,11 @@
+.vscode/**
+.github/**
+.git/**
+chatcontinue/**
+*.ts
+!*.d.ts
+tsconfig.json
+.gitignore
+*.vsix
+*.har
+*.log

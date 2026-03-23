@@ -1,0 +1,13 @@
+node_modules/
+*.vsix
+.vscode/
+.github/copilot-instructions.md
+chatcontinue/
+*.har
+*.log
+out/*.d.ts
+out/*.d.ts.map
+out/*.js.map
+out/**/*.d.ts
+out/**/*.d.ts.map
+out/**/*.js.map
