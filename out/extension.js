@@ -77,7 +77,7 @@ async function activate(context) {
             const currentAccount = await accountSwitcher.getCurrentAccount();
             if (currentAccount && currentAccount.apiKey) {
                 // 如果 email 为空，用 name 或占位符代替
-                const emailToUse = currentAccount.email || (currentAccount.name ? `${currentAccount.name.replace(/\s+/g, '.')}@unknown` : 'unknown@unknown');
+                const emailToUse = (currentAccount.email && currentAccount.email.includes('@')) ? currentAccount.email : (currentAccount.name ? `${currentAccount.name.replace(/\s+/g, '.')}@unknown` : 'unknown@unknown');
                 const nameToUse = currentAccount.name || (currentAccount.email ? currentAccount.email.split('@')[0] : 'Unknown');
                 const accounts = await accountManager.getAccounts();
                 // 按 API Key 匹配已有账号

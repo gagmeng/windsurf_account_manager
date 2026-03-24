@@ -198,7 +198,7 @@ class AccountPanelProvider {
             this._sendMessage('error', '账号不存在');
             return;
         }
-        const refreshOnSwitch = vscode.workspace.getConfiguration().get('aceSwitch.refreshOnSwitch', true);
+        const refreshOnSwitch = vscode.workspace.getConfiguration().get('aceSwitch.refreshOnSwitch', false);
         this._sendMessage('info', '正在切换账号...');
         const result = await this._accountSwitcher.switchAccount(account, refreshOnSwitch);
         if (result.success) {
@@ -240,7 +240,7 @@ class AccountPanelProvider {
             return;
         }
         this._sendMessage('info', `正在切换到: ${account.email} (${index + 1}/${accounts.length})`);
-        const refreshOnSwitch = vscode.workspace.getConfiguration().get('aceSwitch.refreshOnSwitch', true);
+        const refreshOnSwitch = vscode.workspace.getConfiguration().get('aceSwitch.refreshOnSwitch', false);
         const result = await this._accountSwitcher.switchAccount(account, refreshOnSwitch);
         if (result.success) {
             await this._accountManager.setCurrentAccountIndex(index);
@@ -543,7 +543,7 @@ class AccountPanelProvider {
     async _sendRefreshSetting() {
         if (!this._view)
             return;
-        const refreshOnSwitch = vscode.workspace.getConfiguration().get('aceSwitch.refreshOnSwitch', true);
+        const refreshOnSwitch = vscode.workspace.getConfiguration().get('aceSwitch.refreshOnSwitch', false);
         this._view.webview.postMessage({
             type: 'refreshSetting',
             value: refreshOnSwitch
@@ -579,10 +579,61 @@ class AccountPanelProvider {
       color: var(--vscode-foreground);
       background: var(--vscode-sideBar-background);
       padding: 12px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
     
     .section {
       margin-bottom: 16px;
+      flex-shrink: 0;
+    }
+    
+    .section.account-list-section {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 0;
+    }
+    
+    .toolbar-row {
+      display: flex;
+      gap: 6px;
+    }
+    .toolbar-btn {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 12px;
+      border: 1px solid var(--vscode-widget-border);
+      border-radius: 4px;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .toolbar-btn:hover {
+      border-color: var(--vscode-focusBorder);
+      background: var(--vscode-list-hoverBackground);
+    }
+    .toolbar-btn.primary {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-color: var(--vscode-button-background);
+    }
+    .toolbar-btn.primary:hover {
+      background: var(--vscode-button-hoverBackground, #1a8cff);
+    }
+    
+    .account-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
     }
     
     .section-title {
@@ -678,12 +729,6 @@ class AccountPanelProvider {
     .no-account {
       color: var(--vscode-descriptionForeground);
       font-style: italic;
-    }
-    
-    .account-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
     }
     
     .search-box {
@@ -1095,12 +1140,14 @@ class AccountPanelProvider {
     }
     
     .account-group-items {
-      overflow: hidden;
+      overflow-y: auto;
       transition: max-height 0.3s ease;
+      max-height: 400px;
     }
     
     .account-group-items.collapsed {
       max-height: 0 !important;
+      overflow: hidden;
     }
     
     .group-title {
@@ -1300,33 +1347,19 @@ class AccountPanelProvider {
     <button class="switch-next-btn" onclick="switchNextAccount()">⏭ 切换下一个账号 <span class="shortcut-hint" id="shortcutDisplay">Ctrl+Alt+K</span></button>
   </div>
   
-  <div class="section">
-    <div class="section-title">切换设置</div>
-    <div class="toggle-container">
+  <div class="section toolbar-section">
+    <div class="toolbar-row">
+      <button class="toolbar-btn" onclick="resetMachineId()" title="重置机器码">🔄 重置机器码</button>
+      <button class="toolbar-btn primary" id="addBtn" onclick="showLoginForm()" title="添加账号">+ 添加账号</button>
+    </div>
+    <div class="toggle-container" style="margin-top:6px;">
       <span class="toggle-label">切换后刷新窗口</span>
-      <div id="refreshToggle" class="toggle-switch active" onclick="toggleRefresh()"></div>
-    </div>
-  </div>
-  
-  <div class="section">
-    <div class="section-title">工具</div>
-    <div class="tool-card" onclick="resetMachineId()">
-      <span class="tool-icon">🔄</span>
-      <div class="tool-info">
-        <div class="tool-name">重置机器码</div>
-        <div class="tool-desc">生成新的 machineId 和 macMachineId</div>
-      </div>
-      <span class="tool-arrow">→</span>
+      <div id="refreshToggle" class="toggle-switch" onclick="toggleRefresh()"></div>
     </div>
   </div>
   
   
-  <div class="section">
-    <div class="section-title">添加账号</div>
-    <div class="tip-box">
-      <span class="tip-icon">🪄</span>
-      <span class="tip-text">需开启魔法才能连接 Google Firebase 获取 API Key</span>
-    </div>
+  <div class="section" style="display:none;" id="addAccountSection">
     
     <!-- 登录模式表单 -->
     <div id="loginForm" class="add-form">
@@ -1366,12 +1399,9 @@ class AccountPanelProvider {
       <div class="form-switch" onclick="switchToLogin()">← 使用邮箱密码登录</div>
     </div>
     
-    <button id="addBtn" class="btn btn-primary" onclick="showLoginForm()">
-      + 添加账号
-    </button>
   </div>
   
-  <div class="section">
+  <div class="section account-list-section">
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>账号列表</span>
       <button class="icon-btn" onclick="refreshAllQuotas()" title="一键刷新所有账号配额" style="font-size:12px;">🔄 刷新配额</button>
@@ -1616,7 +1646,7 @@ class AccountPanelProvider {
                 </div>
                 <button class="icon-btn" onclick="event.stopPropagation(); deleteAccountsByType('\${type}')" title="删除该类型所有账号">🗑️</button>
               </div>
-              <div class="account-group-items \${isCollapsed ? 'collapsed' : ''}" style="max-height: \${groups[type].length * 100}px;">
+              <div class="account-group-items \${isCollapsed ? 'collapsed' : ''}">
                 \${groups[type].map(acc => {
                   const q = quotaCache[acc.id];
                   let quotaHtml = '';
@@ -1699,16 +1729,16 @@ class AccountPanelProvider {
     }
     
     function showLoginForm() {
+      document.getElementById('addAccountSection').style.display = '';
       document.getElementById('loginForm').classList.add('show');
       document.getElementById('manualForm').classList.remove('show');
-      document.getElementById('addBtn').style.display = 'none';
       document.getElementById('loginEmailInput').focus();
     }
     
     function showManualForm() {
+      document.getElementById('addAccountSection').style.display = '';
       document.getElementById('manualForm').classList.add('show');
       document.getElementById('loginForm').classList.remove('show');
-      document.getElementById('addBtn').style.display = 'none';
       document.getElementById('manualEmailInput').focus();
     }
     
@@ -1727,7 +1757,7 @@ class AccountPanelProvider {
     function cancelAdd() {
       document.getElementById('loginForm').classList.remove('show');
       document.getElementById('manualForm').classList.remove('show');
-      document.getElementById('addBtn').style.display = 'flex';
+      document.getElementById('addAccountSection').style.display = 'none';
       // 清空登录表单
       document.getElementById('loginEmailInput').value = '';
       document.getElementById('loginPasswordInput').value = '';

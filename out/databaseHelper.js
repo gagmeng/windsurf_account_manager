@@ -65,36 +65,47 @@ class DatabaseHelper {
     /**
      * 从数据库读取指定 key 的值
      */
+    static _readFromDBFile(SQL, dbBuffer, key) {
+        const db = new SQL.Database(dbBuffer);
+        try {
+            const result = db.exec('SELECT value FROM ItemTable WHERE key = ?', [key]);
+            if (result.length > 0 && result[0].values.length > 0) {
+                const value = result[0].values[0][0];
+                if (typeof value === 'string') {
+                    try {
+                        return JSON.parse(value);
+                    }
+                    catch {
+                        return value;
+                    }
+                }
+                return value;
+            }
+            return null;
+        }
+        finally {
+            db.close();
+        }
+    }
     static async readFromDB(key) {
         const SQL = await initSqlJs();
         const dbPath = pathDetector_1.PathDetector.getDBPath();
         try {
             const dbBuffer = await fs.readFile(dbPath);
-            const db = new SQL.Database(dbBuffer);
-            try {
-                const result = db.exec('SELECT value FROM ItemTable WHERE key = ?', [key]);
-                if (result.length > 0 && result[0].values.length > 0) {
-                    const value = result[0].values[0][0];
-                    // 尝试解析 JSON
-                    if (typeof value === 'string') {
-                        try {
-                            return JSON.parse(value);
-                        }
-                        catch {
-                            return value;
-                        }
-                    }
-                    return value;
-                }
-                return null;
-            }
-            finally {
-                db.close();
-            }
+            return this._readFromDBFile(SQL, dbBuffer, key);
         }
         catch (error) {
-            console.error('[DatabaseHelper] 读取失败:', error);
-            return null;
+            // 主数据库读取失败（如 ItemTable 不存在），尝试备份文件
+            const backupPath = dbPath + '.backup';
+            try {
+                const backupBuffer = await fs.readFile(backupPath);
+                console.log(`[DatabaseHelper] 主数据库读取失败，使用备份: ${key}`);
+                return this._readFromDBFile(SQL, backupBuffer, key);
+            }
+            catch (backupError) {
+                console.error('[DatabaseHelper] 读取失败:', error);
+                return null;
+            }
         }
     }
     /**
@@ -132,6 +143,8 @@ class DatabaseHelper {
                 else {
                     finalValue = String(value);
                 }
+                // 确保 ItemTable 存在
+                db.run('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value TEXT)');
                 // 执行插入或更新
                 db.run('INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)', [key, finalValue]);
                 // 导出并写回文件
