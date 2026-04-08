@@ -214,21 +214,48 @@ class AccountSwitcher {
             // 从 userStatusProtoBinaryBase64 解析 email 和 name
             if (authStatus && authStatus.userStatusProtoBinaryBase64 && (!result.email || !result.name)) {
                 try {
-                    const raw = Buffer.from(authStatus.userStatusProtoBinaryBase64, 'base64').toString('utf-8');
-                    // 提取 email（匹配 xxx@xxx.xxx 模式）
-                    if (!result.email) {
-                        const emailMatch = raw.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-z]{2,6}/);
-                        if (emailMatch) {
-                            result.email = emailMatch[0];
-                            console.log(`[AccountSwitcher] 从 userStatus 提取到 email: ${result.email}`);
+                    const buf = Buffer.from(authStatus.userStatusProtoBinaryBase64, 'base64');
+                    // 正确解析 protobuf 二进制，提取 length-delimited 字符串字段
+                    const extractedStrings = [];
+                    let i = 0;
+                    while (i < buf.length) {
+                        const wireType = buf[i] & 0x07;
+                        i++;
+                        if (wireType === 2 && i < buf.length) {
+                            // length-delimited: 读取 varint 长度，再提取对应字节为字符串
+                            let len = 0, shift = 0;
+                            while (i < buf.length) {
+                                const b = buf[i++];
+                                len |= (b & 0x7F) << shift;
+                                shift += 7;
+                                if (!(b & 0x80)) break;
+                            }
+                            if (len > 0 && len < 500 && i + len <= buf.length) {
+                                const str = buf.slice(i, i + len).toString('utf-8');
+                                if (/^[\x20-\x7e]+$/.test(str)) {
+                                    extractedStrings.push(str);
+                                }
+                            }
+                            i += len;
+                        } else if (wireType === 0) {
+                            while (i < buf.length && buf[i] & 0x80) i++;
+                            i++;
+                        } else if (wireType === 1) {
+                            i += 8;
+                        } else if (wireType === 5) {
+                            i += 4;
+                        } else {
+                            break;
                         }
                     }
-                    // 提取 name（protobuf 中 name 通常在前几个字节，field tag 0x1a = string）
-                    if (!result.name) {
-                        // name 在 protobuf 中靠前位置，取第一个可读 ASCII 字符串片段
-                        const nameMatch = raw.match(/^[\x00-\x1f]*([\x20-\x7e]{2,})/);
-                        if (nameMatch && !nameMatch[1].includes('@')) {
-                            result.name = nameMatch[1].trim();
+                    // 从提取的字符串中精确匹配 email 和 name
+                    for (const str of extractedStrings) {
+                        if (!result.email && /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-z]{2,6}$/.test(str)) {
+                            result.email = str;
+                            console.log(`[AccountSwitcher] 从 userStatus 提取到 email: ${result.email}`);
+                        }
+                        if (!result.name && str.length >= 2 && !str.includes('@')) {
+                            result.name = str.trim();
                             console.log(`[AccountSwitcher] 从 userStatus 提取到 name: ${result.name}`);
                         }
                     }
