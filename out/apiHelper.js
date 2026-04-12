@@ -72,6 +72,7 @@ async function httpPost(url, data, headers = {}) {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData),
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://windsurf.com/',
                 ...headers
             },
             timeout: FIREBASE_CONFIG.REQUEST_TIMEOUT
@@ -123,7 +124,8 @@ async function httpPostFormUrlEncoded(url, data) {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(postData),
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://windsurf.com/'
             },
             timeout: FIREBASE_CONFIG.REQUEST_TIMEOUT
         };
