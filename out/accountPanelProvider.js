@@ -49,6 +49,7 @@ class AccountPanelProvider {
         this._extensionUri = _extensionUri;
         this._accountManager = accountManager;
         this._accountSwitcher = accountSwitcher;
+        this._quotaCache = {};
     }
     /**
      * 解析 WebView
@@ -111,11 +112,15 @@ class AccountPanelProvider {
                 case 'fetchCurrentQuota':
                     await this._fetchCurrentQuota();
                     break;
+                case 'getQuotaCache':
+                    this._sendQuotaCache();
+                    break;
             }
         });
         // 初始加载数据
         this._sendAccountList();
         this._sendCurrentAccount();
+        this._sendQuotaCache();
     }
     /**
      * 刷新面板
@@ -133,6 +138,15 @@ class AccountPanelProvider {
         if (!this._view)
             return;
         const accounts = await this._accountManager.getAccounts();
+        const _deriveType = (acc) => {
+            const pn = (acc.planName || '').toLowerCase();
+            if (pn === 'teams') return 'teams';
+            if (pn === 'enterprise') return 'enterprise';
+            if (pn === 'pro') return 'pro';
+            if (pn === 'trial') return 'trial';
+            if (pn === 'free') return 'free';
+            return acc.accountType || 'OTHER';
+        };
         this._view.webview.postMessage({
             type: 'accountList',
             accounts: accounts.map(acc => ({
@@ -141,7 +155,7 @@ class AccountPanelProvider {
                 name: acc.name,
                 apiKey: acc.apiKey,
                 planName: acc.planName,
-                accountType: acc.accountType || 'OTHER'
+                accountType: _deriveType(acc)
             }))
         });
     }
@@ -276,18 +290,40 @@ class AccountPanelProvider {
         });
         const result = await apiHelper.login(email, password);
         if (result.success) {
-            const acctType = accountType || '';
-            const planName = acctType ? acctType.charAt(0).toUpperCase() + acctType.slice(1).toLowerCase() : '';
+            // 自动检测账号类型：通过 idToken 调用 GetPlanStatus
+            let detectedPlanName = '';
+            let detectedType = '';
+            if (result.idToken) {
+                try {
+                    this._sendMessage('info', '正在检测账号类型...');
+                    const planResp = await apiHelper.getPlanStatusJson(result.idToken);
+                    const planStatus = planResp.planStatus || planResp;
+                    const planInfo = planStatus.planInfo || planResp.planInfo || {};
+                    detectedPlanName = planInfo.planName || planInfo.plan_name || '';
+                    const pn = detectedPlanName.toLowerCase();
+                    if (pn === 'teams') detectedType = 'teams';
+                    else if (pn === 'enterprise') detectedType = 'enterprise';
+                    else if (pn === 'pro') detectedType = 'pro';
+                    else if (pn === 'trial') detectedType = 'trial';
+                    else if (pn === 'free') detectedType = 'free';
+                    this._sendMessage('info', `检测到账号类型: ${detectedPlanName || '未知'}`);
+                } catch (e) {
+                    console.log('[AccountPanel] 自动检测账号类型失败:', e.message);
+                }
+            }
+            // 手动选择的类型作为后备
+            const finalType = detectedType || accountType || '';
+            const finalPlanName = detectedPlanName || (finalType ? finalType.charAt(0).toUpperCase() + finalType.slice(1).toLowerCase() : '');
             await this._accountManager.addAccount({
                 email: result.email,
                 name: result.name,
                 apiKey: result.apiKey,
                 apiServerUrl: result.apiServerUrl,
                 refreshToken: result.refreshToken,
-                planName: planName,
-                accountType: acctType
+                planName: finalPlanName,
+                accountType: finalType
             });
-            this._sendMessage('success', `账号 ${result.email} 添加成功！`);
+            this._sendMessage('success', `账号 ${result.email} 添加成功！${finalPlanName ? '(' + finalPlanName + ')' : ''}`);
             await this._sendAccountList();
         }
         else {
@@ -387,7 +423,7 @@ class AccountPanelProvider {
             this._sendMessage('error', '账号不存在');
             return;
         }
-        const typeMap = { trial: 'Trial', pro: 'Pro', free: 'Free', enterprise: 'Enterprise' };
+        const typeMap = { trial: 'Trial', pro: 'Pro', free: 'Free', enterprise: 'Enterprise', teams: 'Teams' };
         const lines = [];
         if (account.email) lines.push(`邮箱: ${account.email}`);
         if (account.name && account.name !== account.email) lines.push(`名称: ${account.name}`);
@@ -428,9 +464,14 @@ class AccountPanelProvider {
                     : pn.toLowerCase() === 'pro' ? 'pro'
                     : pn.toLowerCase() === 'free' ? 'free'
                     : pn.toLowerCase() === 'enterprise' ? 'enterprise'
+                    : pn.toLowerCase() === 'teams' ? 'teams'
                     : account.accountType || '';
                 await this._accountManager.updateAccount(accountId, { planName: pn, accountType: at });
                 await this._sendAccountList();
+            }
+            // 缓存配额到扩展端
+            if (quota) {
+                this._quotaCache[accountId] = quota;
             }
             if (this._view) {
                 this._view.webview.postMessage({
@@ -481,6 +522,10 @@ class AccountPanelProvider {
                     apiServerUrl: current.apiServerUrl || 'https://server.codeium.com',
                     refreshToken: ''
                 });
+                // 缓存配额到扩展端
+                if (quota) {
+                    this._quotaCache['__current__'] = quota;
+                }
                 if (this._view) {
                     this._view.webview.postMessage({
                         type: 'currentQuota',
@@ -536,6 +581,17 @@ class AccountPanelProvider {
             endAt: info.endTimestamp || null,
             source: 'local'
         };
+    }
+    /**
+     * 发送缓存的配额数据到 WebView
+     */
+    _sendQuotaCache() {
+        if (!this._view || Object.keys(this._quotaCache).length === 0)
+            return;
+        this._view.webview.postMessage({
+            type: 'quotaCacheRestore',
+            cache: this._quotaCache
+        });
     }
     /**
      * 发送刷新设置到 WebView
@@ -683,89 +739,6 @@ class AccountPanelProvider {
       margin-left: 4px;
     }
     
-    .current-account .avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--vscode-button-background), var(--vscode-button-hoverBackground, #1a8cff));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      color: var(--vscode-button-foreground);
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-    
-    .current-account .account-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .current-account .email {
-      font-weight: 600;
-      color: var(--vscode-foreground);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    
-    .current-account .name {
-      font-size: 12px;
-      color: var(--vscode-descriptionForeground);
-      margin-top: 2px;
-    }
-    
-    .current-account .badge {
-      display: inline-block;
-      background: var(--vscode-badge-background);
-      color: var(--vscode-badge-foreground);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      margin-top: 6px;
-    }
-    
-    .no-account {
-      color: var(--vscode-descriptionForeground);
-      font-style: italic;
-    }
-    
-    .search-box {
-      margin-bottom: 8px;
-    }
-    
-    .search-input {
-      width: 100%;
-      padding: 8px 10px;
-      padding-left: 32px;
-      border: 1px solid var(--vscode-input-border);
-      border-radius: 4px;
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      font-size: 13px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='%23888888'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: 10px center;
-      background-size: 14px;
-    }
-    
-    .search-input:focus {
-      outline: none;
-      border-color: var(--vscode-focusBorder);
-    }
-    
-    .search-input::placeholder {
-      color: var(--vscode-input-placeholderForeground);
-    }
-    
-    .search-result-info {
-      font-size: 11px;
-      color: var(--vscode-descriptionForeground);
-      margin-bottom: 8px;
-      padding: 4px 0;
-    }
-    
     .account-item {
       display: flex;
       align-items: center;
@@ -815,6 +788,10 @@ class AccountPanelProvider {
     }
     .account-item .mini-avatar.type-trial {
       background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+    }
+    .account-item .mini-avatar.type-teams {
+      background: linear-gradient(135deg, #ec4899, #db2777);
       color: #fff;
     }
     .account-item .mini-avatar.type-other {
@@ -1127,6 +1104,7 @@ class AccountPanelProvider {
     .group-header .type-dot.dot-free { background: #6b7280; }
     .group-header .type-dot.dot-enterprise { background: #f59e0b; }
     .group-header .type-dot.dot-trial { background: #10b981; }
+    .group-header .type-dot.dot-teams { background: #ec4899; }
     .group-header .type-dot.dot-other { background: #8b5cf6; }
     
     .group-header .collapse-icon {
@@ -1365,13 +1343,6 @@ class AccountPanelProvider {
     <div id="loginForm" class="add-form">
       <input type="email" id="loginEmailInput" class="input" placeholder="邮箱地址">
       <input type="password" id="loginPasswordInput" class="input" placeholder="密码">
-      <select id="loginAccountTypeInput" class="input">
-        <option value="">选择账号类型 (可选)</option>
-        <option value="enterprise">ENTERPRISE</option>
-        <option value="pro">PRO</option>
-        <option value="trial">TRIAL</option>
-        <option value="free">FREE</option>
-      </select>
       <div class="form-actions">
         <button class="btn btn-primary" onclick="submitLogin()">登录添加</button>
         <button class="btn btn-secondary" onclick="cancelAdd()">取消</button>
@@ -1388,6 +1359,7 @@ class AccountPanelProvider {
       <select id="manualAccountTypeInput" class="input">
         <option value="">选择账号类型 (可选)</option>
         <option value="enterprise">ENTERPRISE</option>
+        <option value="teams">TEAMS</option>
         <option value="pro">PRO</option>
         <option value="trial">TRIAL</option>
         <option value="free">FREE</option>
@@ -1432,11 +1404,14 @@ class AccountPanelProvider {
     vscode.postMessage({ type: 'getAccounts' });
     vscode.postMessage({ type: 'getCurrentAccount' });
     vscode.postMessage({ type: 'getRefreshSetting' });
+    vscode.postMessage({ type: 'getQuotaCache' });
     // 配额将在 accountList + currentAccount 都就绪后自动查询
     let _initReady = { accounts: false, current: false, quotaFetched: false };
     function _checkAutoFetchQuota() {
       if (_initReady.accounts && _initReady.current && !_initReady.quotaFetched) {
         _initReady.quotaFetched = true;
+        // 如果缓存已有数据，跳过自动查询
+        if (Object.keys(quotaCache).length > 0) return;
         vscode.postMessage({ type: 'fetchCurrentQuota' });
       }
     }
@@ -1446,8 +1421,7 @@ class AccountPanelProvider {
       if (!q) return;
       let cur = _findCurrentAccount();
       if (cur && !quotaCache[cur.id]) {
-        quotaCache[cur.id] = q;
-        renderAccountList();
+        quotaCache[cur.id] = quotaCache['__current__'];
       }
     }
     // 多策略匹配当前账号：email → name → apiKey
@@ -1511,8 +1485,15 @@ class AccountPanelProvider {
       switch (data.type) {
         case 'accountList':
           accounts = data.accounts;
-          renderAccountList();
           _initReady.accounts = true;
+          // 账号列表到达后，重新匹配 __current__ 缓存
+          if (quotaCache['__current__'] && accounts.length > 0) {
+            let cur = _findCurrentAccount();
+            if (cur && !quotaCache[cur.id]) {
+              quotaCache[cur.id] = quotaCache['__current__'];
+            }
+          }
+          renderAccountList();
           _checkAutoFetchQuota();
           _rematchCurrentQuota();
           break;
@@ -1552,6 +1533,13 @@ class AccountPanelProvider {
             quotaCache['__current__'] = data.quota;
             let cur = _findCurrentAccount();
             if (cur) { quotaCache[cur.id] = data.quota; }
+            renderAccountList();
+          }
+          break;
+          
+        case 'quotaCacheRestore':
+          if (data.cache) {
+            Object.assign(quotaCache, data.cache);
             renderAccountList();
           }
           break;
@@ -1630,7 +1618,7 @@ class AccountPanelProvider {
       });
       
       // 按照固定顺序排列组
-      const typeOrder = ['enterprise', 'pro', 'trial', 'free', 'OTHER'];
+      const typeOrder = ['enterprise', 'teams', 'pro', 'trial', 'free', 'OTHER'];
       let html = '';
       
       typeOrder.forEach(type => {
@@ -1772,14 +1760,13 @@ class AccountPanelProvider {
     function submitLogin() {
       const email = document.getElementById('loginEmailInput').value.trim();
       const password = document.getElementById('loginPasswordInput').value;
-      const accountType = document.getElementById('loginAccountTypeInput').value;
       
       if (!email || !password) {
         showMessage('error', '请输入邮箱和密码');
         return;
       }
       
-      vscode.postMessage({ type: 'addAccountByLogin', email, password, accountType });
+      vscode.postMessage({ type: 'addAccountByLogin', email, password, accountType: '' });
       cancelAdd();
     }
     

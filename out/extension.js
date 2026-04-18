@@ -102,6 +102,7 @@ async function activate(context) {
                             : planNameStr.toLowerCase() === 'pro' ? 'pro'
                             : planNameStr.toLowerCase() === 'free' ? 'free'
                             : planNameStr.toLowerCase() === 'enterprise' ? 'enterprise'
+                            : planNameStr.toLowerCase() === 'teams' ? 'teams'
                             : '';
                         await accountManager.addAccount({
                             email: emailToUse,
