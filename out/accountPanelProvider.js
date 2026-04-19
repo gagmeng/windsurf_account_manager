@@ -115,6 +115,12 @@ class AccountPanelProvider {
                 case 'getQuotaCache':
                     this._sendQuotaCache();
                     break;
+                case 'exportAccounts':
+                    await this._exportAccounts();
+                    break;
+                case 'importAccounts':
+                    await this._importAccounts();
+                    break;
             }
         });
         // 初始加载数据
@@ -611,6 +617,67 @@ class AccountPanelProvider {
     async _setRefreshSetting(value) {
         await vscode.workspace.getConfiguration().update('aceSwitch.refreshOnSwitch', value, vscode.ConfigurationTarget.Global);
         this._sendMessage('success', value ? '已开启切换后刷新' : '已关闭切换后刷新');
+    }
+    /**
+     * 导出所有账号到 JSON 文件
+     */
+    async _exportAccounts() {
+        try {
+            const accounts = await this._accountManager.getAccounts();
+            if (accounts.length === 0) {
+                this._sendMessage('error', '没有可导出的账号');
+                return;
+            }
+            const exportData = accounts.map(acc => ({
+                email: acc.email,
+                name: acc.name,
+                apiKey: acc.apiKey,
+                apiServerUrl: acc.apiServerUrl,
+                refreshToken: acc.refreshToken,
+                planName: acc.planName,
+                accountType: acc.accountType
+            }));
+            const uri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file('windsurf_accounts.json'),
+                filters: { 'JSON': ['json'] },
+                title: '导出账号数据'
+            });
+            if (uri) {
+                const content = JSON.stringify(exportData, null, 2);
+                await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
+                this._sendMessage('success', `已导出 ${accounts.length} 个账号到: ${uri.fsPath}`);
+            }
+        }
+        catch (error) {
+            this._sendMessage('error', `导出失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        }
+    }
+    /**
+     * 从 JSON 文件导入账号
+     */
+    async _importAccounts() {
+        try {
+            const uris = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                filters: { 'JSON': ['json'] },
+                title: '导入账号数据'
+            });
+            if (!uris || uris.length === 0)
+                return;
+            const fileContent = await vscode.workspace.fs.readFile(uris[0]);
+            const jsonStr = Buffer.from(fileContent).toString('utf-8');
+            const count = await this._accountManager.importAccounts(jsonStr);
+            if (count > 0) {
+                this._sendMessage('success', `成功导入 ${count} 个账号`);
+                await this._sendAccountList();
+            }
+            else {
+                this._sendMessage('error', '未找到有效账号数据，请检查 JSON 格式');
+            }
+        }
+        catch (error) {
+            this._sendMessage('error', `导入失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        }
     }
     /**
      * 生成 WebView HTML
@@ -1330,6 +1397,10 @@ class AccountPanelProvider {
       <button class="toolbar-btn" onclick="resetMachineId()" title="重置机器码">🔄 重置机器码</button>
       <button class="toolbar-btn primary" id="addBtn" onclick="showLoginForm()" title="添加账号">+ 添加账号</button>
     </div>
+    <div class="toolbar-row" style="margin-top:6px;">
+      <button class="toolbar-btn" onclick="exportAccounts()" title="导出所有账号信息到JSON文件">📤 导出账号</button>
+      <button class="toolbar-btn" onclick="importAccounts()" title="从JSON文件导入账号">📥 导入账号</button>
+    </div>
     <div class="toggle-container" style="margin-top:6px;">
       <span class="toggle-label">切换后刷新窗口</span>
       <div id="refreshToggle" class="toggle-switch" onclick="toggleRefresh()"></div>
@@ -1533,13 +1604,6 @@ class AccountPanelProvider {
             quotaCache['__current__'] = data.quota;
             let cur = _findCurrentAccount();
             if (cur) { quotaCache[cur.id] = data.quota; }
-            renderAccountList();
-          }
-          break;
-          
-        case 'quotaCacheRestore':
-          if (data.cache) {
-            Object.assign(quotaCache, data.cache);
             renderAccountList();
           }
           break;
@@ -1846,6 +1910,14 @@ class AccountPanelProvider {
     
     function resetMachineId() {
       vscode.postMessage({ type: 'resetMachineId' });
+    }
+    
+    function exportAccounts() {
+      vscode.postMessage({ type: 'exportAccounts' });
+    }
+    
+    function importAccounts() {
+      vscode.postMessage({ type: 'importAccounts' });
     }
     
     // 回车提交 - 登录模式
