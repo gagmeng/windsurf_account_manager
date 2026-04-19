@@ -49,13 +49,17 @@ class PatchService {
         return {
             fullMatch: match[0],
             index: match.index,
-            nameVar: match[1], // 捕获组1: name变量 (如 i)
-            apiServerUrlVar: match[2], // 捕获组2: apiServerUrl变量 (如 g)
-            sessionVar: match[3], // 捕获组3: session对象变量 (如 r)
-            uuidModule: match[4], // 捕获组4: uuid模块变量 (如 o)
-            stagingVar: match[5], // 捕获组5: staging key变量 (如 I)
-            configModule: match[6], // 捕获组6: config模块变量 (如 a)
-            stringCheckModule: match[7] // 捕获组7: 字符串检查模块变量 (如 n)
+            registerUserModule: match[1], // 捕获组1: registerUser模块变量 (如 w)
+            nameVar: match[2], // 捕获组2: name变量 (如 i)
+            apiServerUrlVar: match[3], // 捕获组3: apiServerUrl变量 (如 n)
+            apiServerUrlModule: match[4], // 捕获组4: getApiServerUrl/isStaging模块变量 (如 h)
+            errorModule: match[5], // 捕获组5: 错误类模块变量 (如 Q)
+            sessionVar: match[6], // 捕获组6: session对象变量 (如 o)
+            uuidModule: match[7], // 捕获组7: uuid模块变量 (如 E)
+            stagingVar: match[8], // 捕获组8: staging key变量 (如 g)
+            configModule: match[9], // 捕获组9: config模块变量 (如 u)
+            stringCheckModule: match[10], // 捕获组10: 字符串检查模块变量 (如 a)
+            secretsKeyModule: match[11] // 捕获组11: secrets key模块变量 (如 y)
         };
     }
     /**
@@ -69,20 +73,24 @@ class PatchService {
         return {
             fullMatch: match[0],
             index: match.index,
-            authProviderVar: match[1] // 捕获组1: authProvider变量 (通常是e)
+            vscodeModule: match[1], // 捕获组1: vscode模块变量 (如 s)
+            commandIdsVar: match[2], // 捕获组2: 命令ID变量 (如 t)
+            authProviderVar: match[3], // 捕获组3: authProvider变量 (如 e)
+            windsurfErrorModule: match[4], // 捕获组4: WindsurfError模块变量 (如 a)
+            extensionMetadataModule: match[5] // 捕获组5: WindsurfExtensionMetadata模块变量 (如 C)
         };
     }
     /**
      * 根据匹配结果动态生成新的 handleAuthTokenWithShit 函数
      */
     static generateNewHandleAuthTokenWithShit(m) {
-        return `async handleAuthTokenWithShit(A){const{apiKey:t,name:${m.nameVar}}=A,${m.apiServerUrlVar}=(0,B.getApiServerUrl)(A.apiServerUrl);if(!t)throw new s.AuthMalformedLanguageServerResponseError("Auth login failure: empty api_key");if(!${m.nameVar})throw new s.AuthMalformedLanguageServerResponseError("Auth login failure: empty name");const ${m.sessionVar}={id:(0,${m.uuidModule}.v4)(),accessToken:t,account:{label:${m.nameVar},id:${m.nameVar}},scopes:[]},${m.stagingVar}=(0,B.isStaging)((0,${m.configModule}.getConfig)(${m.configModule}.Config.API_SERVER_URL))?"apiServerUrl.staging":"apiServerUrl";return await this.context.globalState.update(${m.stagingVar},${m.apiServerUrlVar}),(0,${m.stringCheckModule}.isString)(${m.apiServerUrlVar})&&!(0,${m.stringCheckModule}.isEmpty)(${m.apiServerUrlVar})&&await this.context.secrets.store(u.getApiServerUrlSecretKey(),${m.apiServerUrlVar}),this._cachedSessions=[${m.sessionVar}],await this.context.secrets.store(u.getSessionsSecretKey(),JSON.stringify([${m.sessionVar}])),await this.restartLanguageServerIfNeeded(${m.apiServerUrlVar}),this._sessionChangeEmitter.fire({added:[${m.sessionVar}],removed:[],changed:[]}),${m.sessionVar}}`;
+        return `async handleAuthTokenWithShit(A){const{apiKey:t,name:${m.nameVar}}=A,${m.apiServerUrlVar}=(0,${m.apiServerUrlModule}.getApiServerUrl)(A.apiServerUrl);if(!t)throw new ${m.errorModule}.AuthMalformedLanguageServerResponseError("Auth login failure: empty api_key");if(!${m.nameVar})throw new ${m.errorModule}.AuthMalformedLanguageServerResponseError("Auth login failure: empty name");const ${m.sessionVar}={id:(0,${m.uuidModule}.v4)(),accessToken:t,account:{label:${m.nameVar},id:${m.nameVar}},scopes:[]},${m.stagingVar}=(0,${m.apiServerUrlModule}.isStaging)((0,${m.configModule}.getConfig)(${m.configModule}.Config.API_SERVER_URL))?"apiServerUrl.staging":"apiServerUrl";return await this.context.globalState.update(${m.stagingVar},${m.apiServerUrlVar}),(0,${m.stringCheckModule}.isString)(${m.apiServerUrlVar})&&!(0,${m.stringCheckModule}.isEmpty)(${m.apiServerUrlVar})&&await this.context.secrets.store(${m.secretsKeyModule}.getApiServerUrlSecretKey(),${m.apiServerUrlVar}),this._cachedSessions=[${m.sessionVar}],await this.context.secrets.store(${m.secretsKeyModule}.getSessionsSecretKey(),JSON.stringify([${m.sessionVar}])),await this.restartLanguageServerIfNeeded(${m.apiServerUrlVar}),this._sessionChangeEmitter.fire({added:[${m.sessionVar}],removed:[],changed:[]}),${m.sessionVar}}`;
     }
     /**
      * 根据匹配结果动态生成新的命令注册
      */
-    static generateNewCommandRegistration(authProviderVar) {
-        return `,s.commands.registerCommand("windsurf.provideAuthTokenToAuthProviderWithShit",async A=>{try{return{session:await ${authProviderVar}.handleAuthTokenWithShit(A),error:void 0}}catch(A){return A instanceof a.WindsurfError?{error:A.errorMetadata}:{error:C.WindsurfExtensionMetadata.getInstance().errorCodes.GENERIC_ERROR}}})`;
+    static generateNewCommandRegistration(m) {
+        return `,${m.vscodeModule}.commands.registerCommand("windsurf.provideAuthTokenToAuthProviderWithShit",async A=>{try{return{session:await ${m.authProviderVar}.handleAuthTokenWithShit(A),error:void 0}}catch(A){return A instanceof ${m.windsurfErrorModule}.WindsurfError?{error:A.errorMetadata}:{error:${m.extensionMetadataModule}.WindsurfExtensionMetadata.getInstance().errorCodes.GENERIC_ERROR}}})`;
     }
     /**
      * 检查补丁是否已应用
@@ -281,7 +289,7 @@ class PatchService {
             console.log(`✅ [PatchService] 找到命令注册，位置: ${commandMatch.index}`);
             console.log(`📊 [PatchService] 检测到 authProvider 变量: ${commandMatch.authProviderVar}`);
             const insertPosition2 = commandMatch.index + commandMatch.fullMatch.length;
-            const newCommandRegistration = this.generateNewCommandRegistration(commandMatch.authProviderVar);
+            const newCommandRegistration = this.generateNewCommandRegistration(commandMatch);
             console.log('🔧 [PatchService] 插入新的命令注册...');
             fileContent = fileContent.substring(0, insertPosition2) +
                 newCommandRegistration +
@@ -388,9 +396,8 @@ exports.PatchService = PatchService;
 // 检测关键字 - 用于验证补丁是否已应用
 PatchService.PATCH_KEYWORD_1 = "windsurf.provideAuthTokenToAuthProviderWithShit";
 PatchService.PATCH_KEYWORD_2 = "handleAuthTokenWithShit";
-// 使用正则表达式匹配 handleAuthToken 函数 - 适配当前版本
-// 当前版本签名: async handleAuthToken(A){const e=await(0,E.registerUser)(A),{apiKey:t,name:i}=e,g=(0,B.getApiServerUrl)(e.apiServerUrl);...this._cachedSessions=[r],...u.getSessionsSecretKey(),...this.restartLanguageServerIfNeeded(g),...}
-PatchService.HANDLE_AUTH_TOKEN_REGEX = /async handleAuthToken\(A\)\{const e=await\(0,E\.registerUser\)\(A\),\{apiKey:t,name:([a-zA-Z])\}=e,([a-zA-Z])=\(0,B\.getApiServerUrl\)\(e\.apiServerUrl\);if\(!t\)throw new s\.AuthMalformedLanguageServerResponseError\("Auth login failure: empty api_key"\);if\(!\1\)throw new s\.AuthMalformedLanguageServerResponseError\("Auth login failure: empty name"\);const ([a-zA-Z])=\{id:\(0,([a-zA-Z])\.v4\)\(\),accessToken:t,account:\{label:\1,id:\1\},scopes:\[\]\},([a-zA-Z])=\(0,B\.isStaging\)\(\(0,([a-zA-Z])\.getConfig\)\(\6\.Config\.API_SERVER_URL\)\)\?"apiServerUrl\.staging":"apiServerUrl";return await this\.context\.globalState\.update\(\5,\2\),\(0,([a-zA-Z])\.isString\)\(\2\)&&!\(0,\7\.isEmpty\)\(\2\)&&await this\.context\.secrets\.store\(u\.getApiServerUrlSecretKey\(\),\2\),this\._cachedSessions=\[\3\],await this\.context\.secrets\.store\(u\.getSessionsSecretKey\(\),JSON\.stringify\(\[\3\]\)\),await this\.restartLanguageServerIfNeeded\(\2\),this\._sessionChangeEmitter\.fire\(\{added:\[\3\],removed:\[\],changed:\[\]\}\),\3\}/;
-// 命令注册的正则表达式
-PatchService.COMMAND_REGISTRATION_REGEX = /s\.commands\.registerCommand\(t\.PROVIDE_AUTH_TOKEN_TO_AUTH_PROVIDER,async A=>\{try\{return\{session:await ([a-zA-Z])\.handleAuthToken\(A\),error:void 0\}\}catch\(A\)\{return A instanceof a\.WindsurfError\?\{error:A\.errorMetadata\}:\{error:C\.WindsurfExtensionMetadata\.getInstance\(\)\.errorCodes\.GENERIC_ERROR\}\}\}\)/;
+// 使用正则表达式匹配 handleAuthToken 函数 - 适配多版本(所有模块变量均动态捕获)
+PatchService.HANDLE_AUTH_TOKEN_REGEX = /async handleAuthToken\(A\)\{const e=await\(0,([a-zA-Z])\.registerUser\)\(A\),\{apiKey:t,name:([a-zA-Z])\}=e,([a-zA-Z])=\(0,([a-zA-Z])\.getApiServerUrl\)\(e\.apiServerUrl\);if\(!t\)throw new ([a-zA-Z])\.AuthMalformedLanguageServerResponseError\("Auth login failure: empty api_key"\);if\(!\2\)throw new \5\.AuthMalformedLanguageServerResponseError\("Auth login failure: empty name"\);const ([a-zA-Z])=\{id:\(0,([a-zA-Z])\.v4\)\(\),accessToken:t,account:\{label:\2,id:\2\},scopes:\[\]\},([a-zA-Z])=\(0,\4\.isStaging\)\(\(0,([a-zA-Z])\.getConfig\)\(\9\.Config\.API_SERVER_URL\)\)\?"apiServerUrl\.staging":"apiServerUrl";return await this\.context\.globalState\.update\(\8,\3\),\(0,([a-zA-Z])\.isString\)\(\3\)&&!\(0,\10\.isEmpty\)\(\3\)&&await this\.context\.secrets\.store\(([a-zA-Z])\.getApiServerUrlSecretKey\(\),\3\),this\._cachedSessions=\[\6\],await this\.context\.secrets\.store\(\11\.getSessionsSecretKey\(\),JSON\.stringify\(\[\6\]\)\),await this\.restartLanguageServerIfNeeded\(\3\),this\._sessionChangeEmitter\.fire\(\{added:\[\6\],removed:\[\],changed:\[\]\}\),\6\}/;
+// 命令注册的正则表达式 - 所有模块变量均动态捕获
+PatchService.COMMAND_REGISTRATION_REGEX = /([a-zA-Z])\.commands\.registerCommand\(([a-zA-Z])\.PROVIDE_AUTH_TOKEN_TO_AUTH_PROVIDER,async A=>\{try\{return\{session:await ([a-zA-Z])\.handleAuthToken\(A\),error:void 0\}\}catch\(A\)\{return A instanceof ([a-zA-Z])\.WindsurfError\?\{error:A\.errorMetadata\}:\{error:([a-zA-Z])\.WindsurfExtensionMetadata\.getInstance\(\)\.errorCodes\.GENERIC_ERROR\}\}\}\)/;
 //# sourceMappingURL=patchService.js.map
