@@ -284,52 +284,42 @@ class InjectService {
      */
     readCsrfFromProcess(pid) {
         if (process.platform === 'win32') {
-            // Windows: 通过 PowerShell P/Invoke 读取进程环境变量 (等同于 Python PEB/ctypes)
+            // Windows: 通过 PowerShell P/Invoke 读取 LS 进程环境变量 (PEB 方式，等同 Python ctypes)
             try {
-                const psScript = `
-$code = @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public class PEB {
-    [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int a, bool b, int pid);
+                const tmpPs1 = path.join(os.tmpdir(), '_windsurf_read_env.ps1');
+                fs.writeFileSync(tmpPs1, `
+$ErrorActionPreference='SilentlyContinue'
+Add-Type @"
+using System;using System.Runtime.InteropServices;using System.Text;
+public class PebReader {
+    [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr OpenProcess(int a,bool b,int pid);
     [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
-    [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, int sz, out int rd);
-    [DllImport("ntdll.dll")] public static extern int NtQueryInformationProcess(IntPtr h, int c, byte[] buf, int sz, out int rl);
-    public static string GetEnv(int pid, string name) {
-        IntPtr h = OpenProcess(0x0410, false, pid);
-        if (h == IntPtr.Zero) return "";
-        try {
-            byte[] pbi = new byte[48];
-            int rl;
-            if (NtQueryInformationProcess(h, 0, pbi, 48, out rl) != 0) return "";
-            long pebAddr = BitConverter.ToInt64(pbi, 8);
-            byte[] peb = new byte[0x30];
-            int rd;
-            if (!ReadProcessMemory(h, (IntPtr)pebAddr, peb, peb.Length, out rd)) return "";
-            long paramsAddr = BitConverter.ToInt64(peb, 0x20);
-            byte[] p = new byte[0x88];
-            if (!ReadProcessMemory(h, (IntPtr)paramsAddr, p, p.Length, out rd)) return "";
-            long envAddr = BitConverter.ToInt64(p, 0x80);
-            byte[] env = new byte[65536];
-            if (!ReadProcessMemory(h, (IntPtr)envAddr, env, env.Length, out rd)) return "";
-            string s = Encoding.Unicode.GetString(env);
-            foreach (string e in s.Split(new char[]{(char)0}, StringSplitOptions.None)) {
-                if (string.IsNullOrEmpty(e)) break;
-                if (e.StartsWith(name + "=")) return e.Substring(name.Length + 1);
-            }
-        } finally { CloseHandle(h); }
-        return "";
+    [DllImport("kernel32.dll",SetLastError=true)] public static extern bool ReadProcessMemory(IntPtr h,IntPtr a,[Out]byte[] buf,int sz,out int rd);
+    [DllImport("ntdll.dll")] public static extern int NtQueryInformationProcess(IntPtr h,int c,[Out]byte[] buf,int sz,out int rl);
+    public static string GetEnv(int pid,string name){
+        IntPtr h=OpenProcess(0x0410,false,pid);if(h==IntPtr.Zero)return "";
+        try{
+            byte[] pbi=new byte[48];int rl;
+            if(NtQueryInformationProcess(h,0,pbi,48,out rl)!=0)return "";
+            long pebAddr=BitConverter.ToInt64(pbi,8);byte[] peb=new byte[48];int rd;
+            if(!ReadProcessMemory(h,(IntPtr)pebAddr,peb,48,out rd))return "";
+            long paramsAddr=BitConverter.ToInt64(peb,0x20);byte[] pp=new byte[0x88];
+            if(!ReadProcessMemory(h,(IntPtr)paramsAddr,pp,0x88,out rd))return "";
+            long envAddr=BitConverter.ToInt64(pp,0x80);byte[] env=new byte[65536];
+            if(!ReadProcessMemory(h,(IntPtr)envAddr,env,65536,out rd))return "";
+            string s=Encoding.Unicode.GetString(env);
+            foreach(string e in s.Split('\\0')){if(string.IsNullOrEmpty(e))break;if(e.StartsWith(name+"="))return e.Substring(name.Length+1);}
+        }finally{CloseHandle(h);}return "";
     }
 }
 "@
-Add-Type -TypeDefinition $code -Language CSharp
-[PEB]::GetEnv(${pid}, 'WINDSURF_CSRF_TOKEN')
-`;
+Write-Output ([PebReader]::GetEnv(${pid},'WINDSURF_CSRF_TOKEN'))
+`, 'utf-8');
                 const stdout = child_process.execSync(
-                    `powershell -NoProfile -ExecutionPolicy Bypass -Command -`,
-                    { timeout: 15000, encoding: 'utf-8', input: psScript }
+                    `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmpPs1}"`,
+                    { timeout: 15000, encoding: 'utf-8' }
                 ).trim();
+                try { fs.unlinkSync(tmpPs1); } catch {}
                 if (stdout) return stdout;
             } catch { }
             // Fallback: 从进程命令行提取
