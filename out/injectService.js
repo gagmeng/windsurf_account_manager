@@ -284,10 +284,58 @@ class InjectService {
      */
     readCsrfFromProcess(pid) {
         if (process.platform === 'win32') {
-            // Windows: PowerShell 读取进程命令行
+            // Windows: 通过 PowerShell P/Invoke 读取进程环境变量 (等同于 Python PEB/ctypes)
+            try {
+                const psScript = `
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class PEB {
+    [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int a, bool b, int pid);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] buf, int sz, out int rd);
+    [DllImport("ntdll.dll")] public static extern int NtQueryInformationProcess(IntPtr h, int c, byte[] buf, int sz, out int rl);
+    public static string GetEnv(int pid, string name) {
+        IntPtr h = OpenProcess(0x0410, false, pid);
+        if (h == IntPtr.Zero) return "";
+        try {
+            byte[] pbi = new byte[48];
+            int rl;
+            if (NtQueryInformationProcess(h, 0, pbi, 48, out rl) != 0) return "";
+            long pebAddr = BitConverter.ToInt64(pbi, 8);
+            byte[] peb = new byte[0x30];
+            int rd;
+            if (!ReadProcessMemory(h, (IntPtr)pebAddr, peb, peb.Length, out rd)) return "";
+            long paramsAddr = BitConverter.ToInt64(peb, 0x20);
+            byte[] p = new byte[0x88];
+            if (!ReadProcessMemory(h, (IntPtr)paramsAddr, p, p.Length, out rd)) return "";
+            long envAddr = BitConverter.ToInt64(p, 0x80);
+            byte[] env = new byte[65536];
+            if (!ReadProcessMemory(h, (IntPtr)envAddr, env, env.Length, out rd)) return "";
+            string s = Encoding.Unicode.GetString(env);
+            foreach (string e in s.Split(new char[]{(char)0}, StringSplitOptions.None)) {
+                if (string.IsNullOrEmpty(e)) break;
+                if (e.StartsWith(name + "=")) return e.Substring(name.Length + 1);
+            }
+        } finally { CloseHandle(h); }
+        return "";
+    }
+}
+"@
+Add-Type -TypeDefinition $code -Language CSharp
+[PEB]::GetEnv(${pid}, 'WINDSURF_CSRF_TOKEN')
+`;
+                const stdout = child_process.execSync(
+                    `powershell -NoProfile -ExecutionPolicy Bypass -Command -`,
+                    { timeout: 15000, encoding: 'utf-8', input: psScript }
+                ).trim();
+                if (stdout) return stdout;
+            } catch { }
+            // Fallback: 从进程命令行提取
             try {
                 const stdout = child_process.execSync(
-                    `powershell -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
+                    `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
                     { timeout: 5000, encoding: 'utf-8' }
                 );
                 const match = stdout.match(/WINDSURF_CSRF_TOKEN[=]([^\s"]+)/);
