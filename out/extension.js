@@ -69,6 +69,37 @@ async function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('aceSwitch.refreshPanel', () => {
         panelProvider.refresh();
     }));
+    // 注册注入命令 + 状态栏按钮
+    const injectService_1 = require("./injectService");
+    context.subscriptions.push(vscode.commands.registerCommand('aceSwitch.injectPro', async () => {
+        const statusMsg = vscode.window.setStatusBarMessage('$(loading~spin) 正在注入...');
+        try {
+            const injector = new injectService_1.InjectService((msg) => {
+                console.log('[AceSwitch]', msg);
+            });
+            let apiKey = '';
+            try {
+                const current = await accountSwitcher.getCurrentAccount();
+                if (current && current.apiKey) apiKey = current.apiKey;
+            } catch { }
+            const result = await injector.inject(apiKey);
+            statusMsg.dispose();
+            if (result.success) {
+                vscode.window.showInformationMessage(`⚡ ${result.message}`);
+            } else {
+                vscode.window.showErrorMessage(`注入失败: ${result.error || result.message}`);
+            }
+        } catch (e) {
+            statusMsg.dispose();
+            vscode.window.showErrorMessage(`注入异常: ${e.message}`);
+        }
+    }));
+    const injectBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    injectBtn.text = '$(zap) Pro 注入';
+    injectBtn.tooltip = '注入 Pro 实验 (禁用限额检查 + Pro 状态)';
+    injectBtn.command = 'aceSwitch.injectPro';
+    injectBtn.show();
+    context.subscriptions.push(injectBtn);
     // 注册其他命令
     context.subscriptions.push((0, switchAccount_1.registerSwitchAccountCommand)(context, accountManager, accountSwitcher), (0, addAccount_1.registerAddAccountCommand)(context, accountManager), (0, switchNextAccount_1.registerSwitchNextAccountCommand)(context, accountManager, accountSwitcher), (0, listAccounts_1.registerListAccountsCommand)(context, accountManager, accountSwitcher), (0, listAccounts_1.registerRemoveAccountCommand)(context, accountManager), (0, listAccounts_1.registerShowCurrentAccountCommand)(context, accountSwitcher));
     // 自动检测当前账号并导入（后台执行，不阻塞激活）
