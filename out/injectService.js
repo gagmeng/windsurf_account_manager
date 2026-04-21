@@ -95,6 +95,7 @@ function buildMeta(apiKey) {
 
 /**
  * 从 vscdb 中读取当前登录的 apiKey (同 Python 版 get_active_login_key)
+ * 使用项目已有的 sql.js 依赖，兼容插件沙箱环境
  */
 function discoverApiKey() {
     const home = os.homedir();
@@ -109,10 +110,35 @@ function discoverApiKey() {
         dbPaths.push(path.join(home, '.config', 'Windsurf', 'User', 'globalStorage', 'state.vscdb'));
         dbPaths.push(path.join(home, '.config', 'Windsurf', 'User', 'globalStorage', 'codeium.windsurf', 'state.vscdb'));
     }
+    // 方式1: sql.js (项目已有依赖，插件内可用)
+    try {
+        const initSqlJs = require('sql.js');
+        const SQL = initSqlJs();
+        for (const dbPath of dbPaths) {
+            try {
+                if (!fs.existsSync(dbPath)) continue;
+                const buf = fs.readFileSync(dbPath);
+                const db = new SQL.Database(buf);
+                try {
+                    const stmt = db.prepare("SELECT value FROM ItemTable WHERE key='windsurfAuthStatus'");
+                    if (stmt.step()) {
+                        const val = stmt.get()[0];
+                        const text = typeof val === 'string' ? val : (val ? val.toString() : '');
+                        if (text) {
+                            const obj = JSON.parse(text);
+                            const key = obj.apiKey || '';
+                            if (key) { stmt.free(); db.close(); return key; }
+                        }
+                    }
+                    stmt.free();
+                } finally { db.close(); }
+            } catch { }
+        }
+    } catch { }
+    // 方式2: sqlite3 CLI 兜底
     for (const dbPath of dbPaths) {
         try {
             if (!fs.existsSync(dbPath)) continue;
-            // 用 sqlite3 命令行读取 (避免依赖 better-sqlite3)
             const result = child_process.execSync(
                 `sqlite3 "${dbPath}" "SELECT value FROM ItemTable WHERE key='windsurfAuthStatus'" 2>/dev/null`,
                 { timeout: 5000, encoding: 'utf-8' }
@@ -347,11 +373,7 @@ class InjectService {
             }
             this.log(`  ✅ 实验注入成功 (禁用限额检查)`);
 
-            // 3. InitializeCascadePanelState (重置限速缓存)
-            const panelR = await lsCall(port, 'InitializeCascadePanelState', buildMeta(apiKey), csrf);
-            this.log(`  ${panelR.ok ? '✅' : '⚠️'} 面板状态已重置 (清除限速缓存)`);
-
-            // 4. Inject Pro status
+            // 3. Inject Pro status (严格按 Python _inject_single_ls 顺序)
             if (apiKey) {
                 const usR = await lsCall(port, 'GetUserStatus', buildMeta(apiKey), csrf);
                 let userStatus;
@@ -386,12 +408,15 @@ class InjectService {
                 }
                 const proR = await lsCall(port, 'UpdatePanelStateWithUserStatus', { ...buildMeta(apiKey), ...userStatus }, csrf);
                 if (proR.ok) {
-                    this.log(`  ✅ 注入成功 (Pro, quota disabled)`);
+                    this.log(`  ✅ Pro 状态注入成功 (teamsTier=2, planName=Pro)`);
                 } else {
-                    this.log(`  ⚠️ Pro 状态注入失败，实验已注入`);
+                    this.log(`  ⚠️ Pro 状态注入失败: ${JSON.stringify(proR.data).substring(0, 100)}`);
                 }
+                // 4. InitializeCascadePanelState (Pro 状态注入后再重置限速缓存)
+                const panelR = await lsCall(port, 'InitializeCascadePanelState', buildMeta(apiKey), csrf);
+                this.log(`  ${panelR.ok ? '✅' : '⚠️'} 面板状态已重置 (清除限速缓存)`);
             } else {
-                this.log(`  ✅ 实验注入成功 (无 apiKey, 跳过 Pro 状态)`);
+                this.log(`  ⚠️ 无 apiKey，跳过 Pro 状态注入`);
             }
             successCount++;
         }
