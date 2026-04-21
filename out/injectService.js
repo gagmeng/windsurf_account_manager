@@ -412,9 +412,6 @@ class InjectService {
                 } else {
                     this.log(`  ⚠️ Pro 状态注入失败: ${JSON.stringify(proR.data).substring(0, 100)}`);
                 }
-                // 4. InitializeCascadePanelState (Pro 状态注入后再重置限速缓存)
-                const panelR = await lsCall(port, 'InitializeCascadePanelState', buildMeta(apiKey), csrf);
-                this.log(`  ${panelR.ok ? '✅' : '⚠️'} 面板状态已重置 (清除限速缓存)`);
             } else {
                 this.log(`  ⚠️ 无 apiKey，跳过 Pro 状态注入`);
             }
