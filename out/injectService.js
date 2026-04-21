@@ -93,6 +93,39 @@ function buildMeta(apiKey) {
     };
 }
 
+/**
+ * 从 vscdb 中读取当前登录的 apiKey (同 Python 版 get_active_login_key)
+ */
+function discoverApiKey() {
+    const home = os.homedir();
+    const dbPaths = [];
+    if (process.platform === 'win32') {
+        const appdata = process.env.APPDATA || '';
+        if (appdata) {
+            dbPaths.push(path.join(appdata, 'Windsurf', 'User', 'globalStorage', 'state.vscdb'));
+            dbPaths.push(path.join(appdata, 'Windsurf', 'User', 'globalStorage', 'codeium.windsurf', 'state.vscdb'));
+        }
+    } else {
+        dbPaths.push(path.join(home, '.config', 'Windsurf', 'User', 'globalStorage', 'state.vscdb'));
+        dbPaths.push(path.join(home, '.config', 'Windsurf', 'User', 'globalStorage', 'codeium.windsurf', 'state.vscdb'));
+    }
+    for (const dbPath of dbPaths) {
+        try {
+            if (!fs.existsSync(dbPath)) continue;
+            // 用 sqlite3 命令行读取 (避免依赖 better-sqlite3)
+            const result = child_process.execSync(
+                `sqlite3 "${dbPath}" "SELECT value FROM ItemTable WHERE key='windsurfAuthStatus'" 2>/dev/null`,
+                { timeout: 5000, encoding: 'utf-8' }
+            ).trim();
+            if (!result) continue;
+            const obj = JSON.parse(result);
+            const key = obj.apiKey || '';
+            if (key) return key;
+        } catch { }
+    }
+    return '';
+}
+
 class InjectService {
     constructor(logFn) {
         this._log = logFn || console.log;
@@ -254,6 +287,17 @@ class InjectService {
      * 一键注入
      */
     async inject(apiKey) {
+        // 自动发现 apiKey (同 Python 版)
+        if (!apiKey) {
+            this.log('🔑 正在从登录态获取 apiKey...');
+            apiKey = discoverApiKey();
+            if (apiKey) {
+                const tail = apiKey.length >= 8 ? apiKey.slice(-8) : apiKey;
+                this.log(`🔑 使用登录态 apiKey: ****${tail}`);
+            } else {
+                this.log('⚠️ 未找到 apiKey，将仅注入实验 flags');
+            }
+        }
         this.log('🔍 正在查找 Language Server 进程...');
         const procs = this.findAllProcesses();
         if (procs.length === 0) {
