@@ -850,11 +850,22 @@ class AccountPanelProvider {
       background: var(--vscode-editor-background);
       border: 1px solid var(--vscode-widget-border);
       border-radius: 6px;
-      padding: 12px;
-      margin-bottom: 8px;
+      padding: 6px 10px;
+      margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 10px;
+    }
+    .current-account-row {
+      font-size: 12px;
+      color: var(--vscode-foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .current-account-row .badge {
+      color: #22c55e;
+      margin-right: 4px;
     }
     
     .switch-next-btn {
@@ -1698,15 +1709,7 @@ class AccountPanelProvider {
       const el = document.getElementById('currentAccount');
       if (account) {
         const curEmail = account.email && account.email.includes('@') ? account.email : (account.name && account.name.includes('@') ? account.name : account.email);
-        const curName = account.email && account.email.includes('@') ? (account.name || '') : (account.name && !account.name.includes('@') ? account.name : '');
-        el.innerHTML = \`
-          <div class="avatar">\${getInitial(curEmail)}</div>
-          <div class="account-info">
-            <div class="email">\${curEmail}</div>
-            <div class="name">\${curName}</div>
-            <div class="badge">✓ 当前使用</div>
-          </div>
-        \`;
+        el.innerHTML = \`<div class="current-account-row"><span class="badge">✓</span> \${curEmail || '未知账号'}</div>\`;
       } else {
         el.innerHTML = '<div class="no-account">未登录</div>';
       }
