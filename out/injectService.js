@@ -268,26 +268,6 @@ class InjectService {
                 }
             } catch { }
         }
-        // Windows 兜底：递归搜索
-        if (process.platform === 'win32') {
-            const searchDirs = [home, process.env.APPDATA, process.env.LOCALAPPDATA].filter(Boolean);
-            for (const dir of searchDirs) {
-                try {
-                    const stdout = child_process.execSync(
-                        `dir /s /b "${dir}\\csrf_token.txt" 2>nul`,
-                        { timeout: 5000, encoding: 'utf-8' }
-                    ).trim();
-                    if (stdout) {
-                        const firstFile = stdout.split('\n')[0].trim();
-                        const token = fs.readFileSync(firstFile, 'utf-8').trim();
-                        if (token) {
-                            this.log(`  [CSRF] 递归搜索找到: ${firstFile}`);
-                            return token;
-                        }
-                    }
-                } catch { }
-            }
-        }
         this.log(`  [CSRF] 文件未找到, 搜索路径: ${candidates.join(', ')}`);
         return '';
     }
