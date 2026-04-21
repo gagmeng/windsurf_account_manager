@@ -237,6 +237,7 @@ class InjectService {
     readCsrfFromFile() {
         // 优先从当前进程环境变量读取（Extension Host 可能继承了 CSRF）
         if (process.env.WINDSURF_CSRF_TOKEN) {
+            this.log('  [CSRF] 从 process.env 获取');
             return process.env.WINDSURF_CSRF_TOKEN;
         }
         const home = os.homedir();
@@ -258,24 +259,36 @@ class InjectService {
         }
         for (const p of candidates) {
             try {
-                const token = fs.readFileSync(p, 'utf-8').trim();
-                if (token) return token;
-            } catch { }
-        }
-        // Windows 兜底：递归搜索 .codeium 目录
-        if (process.platform === 'win32') {
-            try {
-                const stdout = child_process.execSync(
-                    `dir /s /b "${home}\\.codeium\\csrf_token.txt" 2>nul`,
-                    { timeout: 5000, encoding: 'utf-8' }
-                ).trim();
-                if (stdout) {
-                    const firstFile = stdout.split('\n')[0].trim();
-                    const token = fs.readFileSync(firstFile, 'utf-8').trim();
-                    if (token) return token;
+                if (fs.existsSync(p)) {
+                    const token = fs.readFileSync(p, 'utf-8').trim();
+                    if (token) {
+                        this.log(`  [CSRF] 从文件获取: ${p}`);
+                        return token;
+                    }
                 }
             } catch { }
         }
+        // Windows 兜底：递归搜索
+        if (process.platform === 'win32') {
+            const searchDirs = [home, process.env.APPDATA, process.env.LOCALAPPDATA].filter(Boolean);
+            for (const dir of searchDirs) {
+                try {
+                    const stdout = child_process.execSync(
+                        `dir /s /b "${dir}\\csrf_token.txt" 2>nul`,
+                        { timeout: 5000, encoding: 'utf-8' }
+                    ).trim();
+                    if (stdout) {
+                        const firstFile = stdout.split('\n')[0].trim();
+                        const token = fs.readFileSync(firstFile, 'utf-8').trim();
+                        if (token) {
+                            this.log(`  [CSRF] 递归搜索找到: ${firstFile}`);
+                            return token;
+                        }
+                    }
+                } catch { }
+            }
+        }
+        this.log(`  [CSRF] 文件未找到, 搜索路径: ${candidates.join(', ')}`);
         return '';
     }
 
