@@ -237,7 +237,6 @@ class InjectService {
     readCsrfFromFile() {
         // 优先从当前进程环境变量读取（Extension Host 可能继承了 CSRF）
         if (process.env.WINDSURF_CSRF_TOKEN) {
-            this.log('  [CSRF] 从 process.env 获取');
             return process.env.WINDSURF_CSRF_TOKEN;
         }
         const home = os.homedir();
@@ -262,13 +261,11 @@ class InjectService {
                 if (fs.existsSync(p)) {
                     const token = fs.readFileSync(p, 'utf-8').trim();
                     if (token) {
-                        this.log(`  [CSRF] 从文件获取: ${p}`);
                         return token;
                     }
                 }
             } catch { }
         }
-        this.log(`  [CSRF] 文件未找到, 搜索路径: ${candidates.join(', ')}`);
         return '';
     }
 
