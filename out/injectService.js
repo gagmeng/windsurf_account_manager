@@ -276,6 +276,24 @@ class InjectService {
      */
     getListenPorts(pid) {
         const ports = [];
+        if (process.platform === 'win32') {
+            // Windows: netstat -ano
+            try {
+                const stdout = child_process.execSync('netstat -ano -p TCP', { timeout: 10000, encoding: 'utf-8' });
+                for (const line of stdout.split('\n')) {
+                    if (!line.includes('LISTENING')) continue;
+                    const parts = line.trim().split(/\s+/);
+                    // 格式: TCP  0.0.0.0:PORT  0.0.0.0:0  LISTENING  PID
+                    const lastCol = parts[parts.length - 1];
+                    if (parseInt(lastCol) !== pid) continue;
+                    const addrPort = parts[1];
+                    const portStr = addrPort.split(':').pop();
+                    if (portStr) ports.push(parseInt(portStr));
+                }
+            } catch { }
+            return ports;
+        }
+        // Linux: ss
         try {
             const stdout = child_process.execSync(`ss -tlnp`, { timeout: 5000, encoding: 'utf-8' });
             for (const line of stdout.split('\n')) {
