@@ -53,6 +53,11 @@ const FIREBASE_CONFIG = {
     WINDSURF_REGISTER_API: 'https://register.windsurf.com/exa.seat_management_pb.SeatManagementService/RegisterUser',
     // Windsurf Web Backend (JSON API)
     WEB_BACKEND_URL: 'https://web-backend.windsurf.com',
+    // Windsurf PostAuth API (Connect protocol)
+    WINDSURF_POST_AUTH_URL: 'https://server.self-serve.windsurf.com/exa.seat_management_pb.SeatManagementService/WindsurfPostAuth',
+    // Devin Auth 端点
+    DEVIN_AUTH_CONNECTIONS_URL: 'https://windsurf.com/_devin-auth/connections',
+    DEVIN_AUTH_LOGIN_URL: 'https://windsurf.com/_devin-auth/password/login',
     // 请求超时时间 (ms)
     REQUEST_TIMEOUT: 30000
 };
@@ -240,17 +245,132 @@ class ApiHelper {
         }
     }
     /**
-     * 完整登录流程：邮箱密码 -> Token -> API Key
+     * 检查邮箱是否走 Devin Auth
+     * POST https://windsurf.com/_devin-auth/connections
+     * @returns {Promise<{isDevin: boolean, hasPassword: boolean}>}
+     */
+    async checkDevinAuth(email) {
+        try {
+            const response = await httpPost(FIREBASE_CONFIG.DEVIN_AUTH_CONNECTIONS_URL, {
+                product: 'windsurf',
+                email: email
+            });
+            const authMethod = response.auth_method || response.authMethod || {};
+            return {
+                isDevin: authMethod.method === 'auth1',
+                hasPassword: !!authMethod.has_password
+            };
+        }
+        catch (error) {
+            return { isDevin: false, hasPassword: false };
+        }
+    }
+    /**
+     * Devin Auth 密码登录
+     * POST https://windsurf.com/_devin-auth/password/login
+     * @returns {Promise<{token: string, userId: string, email: string}>}
+     */
+    async devinAuthLogin(email, password) {
+        const response = await httpPost(FIREBASE_CONFIG.DEVIN_AUTH_LOGIN_URL, {
+            email: email,
+            password: password
+        });
+        if (!response.token) {
+            throw new Error('Devin Auth 登录失败: 未返回 token');
+        }
+        return {
+            token: response.token,
+            userId: response.user_id || response.userId || '',
+            email: response.email || email
+        };
+    }
+    /**
+     * 用 auth1 token 换 Windsurf session token
+     * POST WindsurfPostAuth (Connect JSON protocol)
+     * @returns {Promise<{sessionToken: string, auth1Token: string, accountId: string, orgId: string}>}
+     */
+    async windsurfPostAuth(auth1Token, retries = 2) {
+        let lastError;
+        for (let i = 0; i <= retries; i++) {
+            try {
+                const response = await httpPost(FIREBASE_CONFIG.WINDSURF_POST_AUTH_URL, {
+                    auth1Token: auth1Token
+                }, {
+                    'Connect-Protocol-Version': '1'
+                });
+                if (!response.sessionToken) {
+                    throw new Error('WindsurfPostAuth 失败: 未返回 sessionToken');
+                }
+                return {
+                    sessionToken: response.sessionToken,
+                    auth1Token: response.auth1Token || auth1Token,
+                    accountId: response.accountId || '',
+                    orgId: response.primaryOrgId || response.orgId || ''
+                };
+            }
+            catch (err) {
+                lastError = err;
+                if (i < retries && (err.message.includes('503') || err.message.includes('502') || err.message.includes('timeout'))) {
+                    await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+                    continue;
+                }
+                throw err;
+            }
+        }
+        throw lastError;
+    }
+    /**
+     * 刷新 Devin session (用 auth1Token 重新换 sessionToken)
+     */
+    async refreshDevinSession(auth1Token) {
+        const result = await this.windsurfPostAuth(auth1Token);
+        return {
+            idToken: result.sessionToken,
+            refreshToken: auth1Token,
+            expiresIn: 3600
+        };
+    }
+    /**
+     * 完整登录流程：先尝试 Devin Auth，失败回退 Firebase
      */
     async login(email, password) {
         try {
             this.log('开始登录...');
             this.log(`账号: ${email}`);
-            // 步骤 1: Firebase 登录
-            this.log('正在验证账号...');
+            // 步骤 1: 先尝试 Devin Auth 登录
+            this.log('正在尝试 Devin Auth 登录...');
+            try {
+                const devinLogin = await this.devinAuthLogin(email, password);
+                this.log('Devin Auth 登录成功');
+                // 步骤 2: 用 auth1 token 换 session token
+                this.log('正在获取 Session Token...');
+                const postAuth = await this.windsurfPostAuth(devinLogin.token);
+                this.log('Session Token 获取成功');
+                // 步骤 3: 用 session token 注册获取 API Key
+                this.log('正在获取 API Key...');
+                const apiKeyResult = await this.getApiKey(postAuth.sessionToken);
+                this.log(`API Key 获取成功: ${apiKeyResult.name}`);
+                return {
+                    success: true,
+                    email: email,
+                    name: apiKeyResult.name,
+                    apiKey: apiKeyResult.apiKey,
+                    apiServerUrl: apiKeyResult.apiServerUrl,
+                    refreshToken: devinLogin.token,
+                    idToken: postAuth.sessionToken,
+                    idTokenExpiresAt: Date.now() + (3600 * 1000),
+                    authType: 'devin'
+                };
+            }
+            catch (devinError) {
+                const devinErr = devinError;
+                this.log(`Devin Auth 失败: ${devinErr.message}，回退到 Firebase`);
+            }
+            // 步骤 1b: 回退到 Firebase 登录
+            this.log('正在通过 Firebase 验证账号...');
             const firebaseResult = await this.loginWithEmailPassword(email, password);
-            this.log('账号验证成功');
-            // 步骤 2: 获取 API Key
+            this.log('Firebase 验证成功');
+            // 步骤 2b: 获取 API Key
             this.log('正在获取 API Key...');
             const apiKeyResult = await this.getApiKey(firebaseResult.idToken);
             this.log(`API Key 获取成功: ${apiKeyResult.name}`);
@@ -262,7 +382,8 @@ class ApiHelper {
                 apiServerUrl: apiKeyResult.apiServerUrl,
                 refreshToken: firebaseResult.refreshToken,
                 idToken: firebaseResult.idToken,
-                idTokenExpiresAt: Date.now() + (firebaseResult.expiresIn * 1000)
+                idTokenExpiresAt: Date.now() + (firebaseResult.expiresIn * 1000),
+                authType: 'firebase'
             };
         }
         catch (error) {
@@ -280,6 +401,12 @@ class ApiHelper {
      */
     async refreshTokens(refreshToken) {
         try {
+            // Devin auth1 token: 用 WindsurfPostAuth 刷新
+            if (refreshToken && refreshToken.startsWith('auth1_')) {
+                this.log('检测到 Devin auth1 token，使用 WindsurfPostAuth 刷新...');
+                return await this.refreshDevinSession(refreshToken);
+            }
+            // Firebase refresh token
             const url = `${FIREBASE_CONFIG.AUTH_REFRESH_URL}?key=${FIREBASE_CONFIG.API_KEY}`;
             // Firebase refresh token API 使用 form-urlencoded 格式
             const response = await httpPostFormUrlEncoded(url, {
@@ -298,13 +425,19 @@ class ApiHelper {
     }
     /**
      * 通过 web-backend JSON API 查询套餐状态 (最简单，仅需 idToken)
+     * 自动适配 Devin token (走 windsurf.com/_backend) 和 Firebase token (走 web-backend)
      */
     async getPlanStatusJson(firebaseIdToken) {
-        const url = `${FIREBASE_CONFIG.WEB_BACKEND_URL}/exa.seat_management_pb.SeatManagementService/GetPlanStatus`;
+        const isDevin = firebaseIdToken && firebaseIdToken.startsWith('devin-session-token$');
+        const baseUrl = isDevin
+            ? 'https://windsurf.com/_backend'
+            : FIREBASE_CONFIG.WEB_BACKEND_URL;
+        const url = `${baseUrl}/exa.seat_management_pb.SeatManagementService/GetPlanStatus`;
         const response = await httpPost(url, {
             authToken: firebaseIdToken
         }, {
-            'Connect-Protocol-Version': '1'
+            'Connect-Protocol-Version': '1',
+            ...(isDevin ? { 'Origin': 'https://windsurf.com', 'Referer': 'https://windsurf.com/' } : {})
         });
         return response;
     }

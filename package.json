@@ -2,7 +2,7 @@
     "name": "ace-account-manager",
     "displayName": "Windsurf 账号管理助手",
     "description": "Windsurf IDE 账号无感切换管理工具",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "publisher": "AceTools",
     "repository": {
         "type": "git",

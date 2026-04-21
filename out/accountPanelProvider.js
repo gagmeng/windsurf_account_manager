@@ -290,7 +290,15 @@ class AccountPanelProvider {
             this._sendMessage('error', '请输入邮箱和密码');
             return;
         }
-        this._sendMessage('info', '正在登录...');
+        // 登录前去重检查
+        const existingAccounts = await this._accountManager.getAccounts();
+        const existingAccount = existingAccounts.find(acc => acc.email === email);
+        if (existingAccount) {
+            this._sendMessage('info', `账号 ${email} 已存在，正在刷新凭证...`);
+        }
+        else {
+            this._sendMessage('info', '正在登录...');
+        }
         const apiHelper = new apiHelper_1.ApiHelper((msg) => {
             this._sendMessage('info', msg);
         });
@@ -320,16 +328,35 @@ class AccountPanelProvider {
             // 手动选择的类型作为后备
             const finalType = detectedType || accountType || '';
             const finalPlanName = detectedPlanName || (finalType ? finalType.charAt(0).toUpperCase() + finalType.slice(1).toLowerCase() : '');
-            await this._accountManager.addAccount({
-                email: result.email,
-                name: result.name,
-                apiKey: result.apiKey,
-                apiServerUrl: result.apiServerUrl,
-                refreshToken: result.refreshToken,
-                planName: finalPlanName,
-                accountType: finalType
-            });
-            this._sendMessage('success', `账号 ${result.email} 添加成功！${finalPlanName ? '(' + finalPlanName + ')' : ''}`);
+            // 去重：按邮箱或 apiKey 匹配已有账号
+            const existingAccounts = await this._accountManager.getAccounts();
+            const existingByEmail = existingAccounts.find(acc => acc.email === result.email);
+            const existingByKey = !existingByEmail ? existingAccounts.find(acc => acc.apiKey && acc.apiKey === result.apiKey) : null;
+            const existing = existingByEmail || existingByKey;
+            if (existing) {
+                // 已有账号，更新信息
+                await this._accountManager.updateAccount(existing.id, {
+                    name: result.name,
+                    apiKey: result.apiKey,
+                    apiServerUrl: result.apiServerUrl,
+                    refreshToken: result.refreshToken,
+                    planName: finalPlanName,
+                    accountType: finalType
+                });
+                this._sendMessage('success', `账号 ${result.email} 已更新！${finalPlanName ? '(' + finalPlanName + ')' : ''}`);
+            }
+            else {
+                await this._accountManager.addAccount({
+                    email: result.email,
+                    name: result.name,
+                    apiKey: result.apiKey,
+                    apiServerUrl: result.apiServerUrl,
+                    refreshToken: result.refreshToken,
+                    planName: finalPlanName,
+                    accountType: finalType
+                });
+                this._sendMessage('success', `账号 ${result.email} 添加成功！${finalPlanName ? '(' + finalPlanName + ')' : ''}`);
+            }
             await this._sendAccountList();
         }
         else {
@@ -345,16 +372,33 @@ class AccountPanelProvider {
             return;
         }
         try {
-            await this._accountManager.addAccount({
-                email: accountData.email,
-                name: accountData.name || accountData.email.split('@')[0],
-                apiKey: accountData.apiKey,
-                apiServerUrl: accountData.apiServerUrl || 'https://server.self-serve.windsurf.com',
-                refreshToken: '',
-                planName: accountData.accountType ? accountData.accountType.charAt(0).toUpperCase() + accountData.accountType.slice(1).toLowerCase() : '',
-                accountType: accountData.accountType
-            });
-            this._sendMessage('success', `账号 ${accountData.email} 添加成功！`);
+            // 去重：按邮箱或 apiKey 匹配
+            const existingAccounts = await this._accountManager.getAccounts();
+            const existingByEmail = existingAccounts.find(acc => acc.email === accountData.email);
+            const existingByKey = !existingByEmail ? existingAccounts.find(acc => acc.apiKey && acc.apiKey === accountData.apiKey) : null;
+            const existing = existingByEmail || existingByKey;
+            if (existing) {
+                await this._accountManager.updateAccount(existing.id, {
+                    name: accountData.name || accountData.email.split('@')[0],
+                    apiKey: accountData.apiKey,
+                    apiServerUrl: accountData.apiServerUrl || 'https://server.self-serve.windsurf.com',
+                    planName: accountData.accountType ? accountData.accountType.charAt(0).toUpperCase() + accountData.accountType.slice(1).toLowerCase() : '',
+                    accountType: accountData.accountType
+                });
+                this._sendMessage('success', `账号 ${accountData.email} 已更新！`);
+            }
+            else {
+                await this._accountManager.addAccount({
+                    email: accountData.email,
+                    name: accountData.name || accountData.email.split('@')[0],
+                    apiKey: accountData.apiKey,
+                    apiServerUrl: accountData.apiServerUrl || 'https://server.self-serve.windsurf.com',
+                    refreshToken: '',
+                    planName: accountData.accountType ? accountData.accountType.charAt(0).toUpperCase() + accountData.accountType.slice(1).toLowerCase() : '',
+                    accountType: accountData.accountType
+                });
+                this._sendMessage('success', `账号 ${accountData.email} 添加成功！`);
+            }
             await this._sendAccountList();
         }
         catch (error) {
