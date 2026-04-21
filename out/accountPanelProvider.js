@@ -41,6 +41,7 @@ exports.AccountPanelProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const apiHelper_1 = require("./apiHelper");
 const databaseHelper_1 = require("./databaseHelper");
+const injectService_1 = require("./injectService");
 /**
  * 账号面板提供者
  */
@@ -120,6 +121,9 @@ class AccountPanelProvider {
                     break;
                 case 'importAccounts':
                     await this._importAccounts();
+                    break;
+                case 'injectPro':
+                    await this._injectPro();
                     break;
             }
         });
@@ -207,6 +211,34 @@ class AccountPanelProvider {
         }
         catch (error) {
             this._sendMessage('error', `重置失败: ${error.message}`);
+        }
+    }
+    /**
+     * Pro 注入 (注入实验 flags + Pro 用户状态到本地 LS)
+     */
+    async _injectPro() {
+        try {
+            this._sendMessage('info', '正在注入 Pro 实验...');
+            // 获取当前账号的 apiKey
+            let apiKey = '';
+            try {
+                const current = await this._accountSwitcher.getCurrentAccount();
+                if (current && current.apiKey) {
+                    apiKey = current.apiKey;
+                }
+            } catch { }
+            const injector = new injectService_1.InjectService((msg) => {
+                this._sendMessage('info', msg);
+            });
+            const result = await injector.inject(apiKey);
+            if (result.success) {
+                this._sendMessage('success', `注入成功！${result.message || ''}`);
+            } else {
+                this._sendMessage('error', `注入失败: ${result.error || result.message || '未知错误'}`);
+            }
+        }
+        catch (error) {
+            this._sendMessage('error', `注入异常: ${error.message}`);
         }
     }
     /**
@@ -1448,6 +1480,7 @@ class AccountPanelProvider {
     <div class="toggle-container" style="margin-top:6px;">
       <span class="toggle-label">切换后刷新窗口</span>
       <div id="refreshToggle" class="toggle-switch" onclick="toggleRefresh()"></div>
+      <button class="toolbar-btn" onclick="injectPro()" title="注入 Pro 实验 (禁用限额检查 + Pro 状态)" style="margin-left:auto;font-size:11px;padding:2px 8px;">⚡ 注入</button>
     </div>
   </div>
   
@@ -1954,6 +1987,10 @@ class AccountPanelProvider {
     
     function resetMachineId() {
       vscode.postMessage({ type: 'resetMachineId' });
+    }
+    
+    function injectPro() {
+      vscode.postMessage({ type: 'injectPro' });
     }
     
     function exportAccounts() {
