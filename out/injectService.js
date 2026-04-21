@@ -301,9 +301,11 @@ class InjectService {
                 this.log(`  ❌ 实验注入失败`);
                 continue;
             }
+            this.log(`  ✅ 实验注入成功 (禁用限额检查)`);
 
             // 3. InitializeCascadePanelState (重置限速缓存)
-            await lsCall(port, 'InitializeCascadePanelState', buildMeta(apiKey), csrf);
+            const panelR = await lsCall(port, 'InitializeCascadePanelState', buildMeta(apiKey), csrf);
+            this.log(`  ${panelR.ok ? '✅' : '⚠️'} 面板状态已重置 (清除限速缓存)`);
 
             // 4. Inject Pro status
             if (apiKey) {
