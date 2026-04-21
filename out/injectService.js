@@ -235,6 +235,10 @@ class InjectService {
      * 从文件读取 CSRF token
      */
     readCsrfFromFile() {
+        // 优先从当前进程环境变量读取（Extension Host 可能继承了 CSRF）
+        if (process.env.WINDSURF_CSRF_TOKEN) {
+            return process.env.WINDSURF_CSRF_TOKEN;
+        }
         const home = os.homedir();
         const candidates = [
             path.join(home, '.codeium', 'windsurf', 'csrf_token.txt'),
@@ -249,12 +253,27 @@ class InjectService {
             const localappdata = process.env.LOCALAPPDATA || '';
             if (localappdata) {
                 candidates.push(path.join(localappdata, 'Windsurf', 'csrf_token.txt'));
+                candidates.push(path.join(localappdata, 'windsurf', 'csrf_token.txt'));
             }
         }
         for (const p of candidates) {
             try {
                 const token = fs.readFileSync(p, 'utf-8').trim();
                 if (token) return token;
+            } catch { }
+        }
+        // Windows 兜底：递归搜索 .codeium 目录
+        if (process.platform === 'win32') {
+            try {
+                const stdout = child_process.execSync(
+                    `dir /s /b "${home}\\.codeium\\csrf_token.txt" 2>nul`,
+                    { timeout: 5000, encoding: 'utf-8' }
+                ).trim();
+                if (stdout) {
+                    const firstFile = stdout.split('\n')[0].trim();
+                    const token = fs.readFileSync(firstFile, 'utf-8').trim();
+                    if (token) return token;
+                }
             } catch { }
         }
         return '';
