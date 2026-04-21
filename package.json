@@ -24,7 +24,7 @@
             "activitybar": [
                 {
                     "id": "aceSwitch",
-                    "title": "账号切换",
+                    "title": "账号管理",
                     "icon": "resources/icon.svg"
                 }
             ]
@@ -88,7 +88,7 @@
             }
         ],
         "configuration": {
-            "title": "账号管理助手",
+            "title": "账号管理",
             "properties": {
                 "aceSwitch.refreshOnSwitch": {
                     "type": "boolean",
