@@ -53,7 +53,7 @@ const patchService_1 = require("./patchService");
  */
 class AccountSwitcher {
     constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('账号切换');
+        this.outputChannel = vscode.window.createOutputChannel('账号管理');
     }
     /**
      * 设置 ExtensionContext
