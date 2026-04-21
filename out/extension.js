@@ -85,13 +85,15 @@ async function activate(context) {
             const result = await injector.inject(apiKey);
             statusMsg.dispose();
             if (result.success) {
-                vscode.window.showInformationMessage(`⚡ ${result.message}`);
+                injectBtn.text = '$(check) 注入成功';
             } else {
-                vscode.window.showErrorMessage(`注入失败: ${result.error || result.message}`);
+                injectBtn.text = '$(error) 注入失败';
             }
+            setTimeout(() => { injectBtn.text = '$(zap) Pro 注入'; }, 3000);
         } catch (e) {
             statusMsg.dispose();
-            vscode.window.showErrorMessage(`注入异常: ${e.message}`);
+            injectBtn.text = '$(error) 注入异常';
+            setTimeout(() => { injectBtn.text = '$(zap) Pro 注入'; }, 3000);
         }
     }));
     const injectBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
