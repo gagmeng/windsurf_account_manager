@@ -246,6 +246,10 @@ class InjectService {
                 candidates.push(path.join(appdata, 'Windsurf', 'csrf_token.txt'));
                 candidates.push(path.join(appdata, 'windsurf', 'csrf_token.txt'));
             }
+            const localappdata = process.env.LOCALAPPDATA || '';
+            if (localappdata) {
+                candidates.push(path.join(localappdata, 'Windsurf', 'csrf_token.txt'));
+            }
         }
         for (const p of candidates) {
             try {
@@ -260,7 +264,18 @@ class InjectService {
      * 从进程环境变量读取 CSRF token (Linux/macOS)
      */
     readCsrfFromProcess(pid) {
-        if (process.platform === 'win32') return '';
+        if (process.platform === 'win32') {
+            // Windows: PowerShell 读取进程命令行
+            try {
+                const stdout = child_process.execSync(
+                    `powershell -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
+                    { timeout: 5000, encoding: 'utf-8' }
+                );
+                const match = stdout.match(/WINDSURF_CSRF_TOKEN[=]([^\s"]+)/);
+                if (match) return match[1];
+            } catch { }
+            return '';
+        }
         for (const file of [`/proc/${pid}/cmdline`, `/proc/${pid}/environ`]) {
             try {
                 const raw = fs.readFileSync(file, 'utf-8');
@@ -279,16 +294,13 @@ class InjectService {
         if (process.platform === 'win32') {
             // Windows: netstat -ano
             try {
-                const stdout = child_process.execSync('netstat -ano -p TCP', { timeout: 10000, encoding: 'utf-8' });
+                const stdout = child_process.execSync('netstat -ano', { timeout: 10000, encoding: 'utf-8' });
                 for (const line of stdout.split('\n')) {
                     if (!line.includes('LISTENING')) continue;
                     const parts = line.trim().split(/\s+/);
-                    // 格式: TCP  0.0.0.0:PORT  0.0.0.0:0  LISTENING  PID
-                    const lastCol = parts[parts.length - 1];
-                    if (parseInt(lastCol) !== pid) continue;
-                    const addrPort = parts[1];
-                    const portStr = addrPort.split(':').pop();
-                    if (portStr) ports.push(parseInt(portStr));
+                    if (!parts.length || parts[parts.length - 1] !== String(pid)) continue;
+                    const match = line.match(/:(\d+)\s/);
+                    if (match) ports.push(parseInt(match[1]));
                 }
             } catch { }
             return ports;
@@ -359,6 +371,7 @@ class InjectService {
             // 获取 CSRF
             let csrf = this.readCsrfFromFile();
             if (!csrf && pid) csrf = this.readCsrfFromProcess(pid);
+            this.log(`  🔐 CSRF: ${csrf ? csrf.substring(0, 8) + '...' : '未找到'}`);
 
             // 端口探测
             if (!port && pid) {
@@ -373,10 +386,15 @@ class InjectService {
 
             this.log(`🔧 [${i + 1}/${procs.length}] port=${port} pid=${pid}`);
 
-            // 1. Heartbeat
-            const hb = await lsCall(port, 'Heartbeat', { metadata: {} }, csrf);
+            // 1. Heartbeat (如果带 CSRF 失败，尝试不带 CSRF)
+            let hb = await lsCall(port, 'Heartbeat', { metadata: {} }, csrf);
+            if (!hb.ok && csrf) {
+                this.log(`  ⚠️ Heartbeat 带 CSRF 失败 (status=${hb.status}), 尝试不带 CSRF...`);
+                hb = await lsCall(port, 'Heartbeat', { metadata: {} }, '');
+                if (hb.ok) csrf = '';  // 后续请求也不带 CSRF
+            }
             if (!hb.ok) {
-                this.log(`  ❌ Heartbeat 失败`);
+                this.log(`  ❌ Heartbeat 失败 (status=${hb.status}, ${JSON.stringify(hb.data).substring(0, 100)})`);
                 continue;
             }
 
