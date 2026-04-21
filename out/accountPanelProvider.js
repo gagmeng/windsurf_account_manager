@@ -1478,7 +1478,7 @@ class AccountPanelProvider {
       <button class="toolbar-btn" onclick="importAccounts()" title="从JSON文件导入账号">📥 导入账号</button>
     </div>
     <div class="toolbar-row" style="margin-top:6px;">
-      <button class="toolbar-btn" onclick="injectPro()" title="注入 Pro 实验 (禁用限额检查 + Pro 状态)">⚡ Pro 注入</button>
+      <button class="toolbar-btn" onclick="injectPro()" title="点击执行 Pro 注入">⚡ Pro 注入</button>
       <div class="toggle-container" style="margin:0;flex:1;justify-content:flex-end;">
         <span class="toggle-label">切换后刷新窗口</span>
         <div id="refreshToggle" class="toggle-switch" onclick="toggleRefresh()"></div>

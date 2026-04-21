@@ -98,7 +98,7 @@ async function activate(context) {
     }));
     const injectBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     injectBtn.text = '$(zap) Pro 注入';
-    injectBtn.tooltip = '注入 Pro 实验 (禁用限额检查 + Pro 状态)';
+    injectBtn.tooltip = '点击执行 Pro 注入';
     injectBtn.command = 'aceSwitch.injectPro';
     injectBtn.show();
     context.subscriptions.push(injectBtn);
