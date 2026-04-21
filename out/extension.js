@@ -86,14 +86,20 @@ async function activate(context) {
             statusMsg.dispose();
             if (result.success) {
                 injectBtn.text = '$(check) 注入成功';
+                injectBtn.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+                injectBtn.color = '#22c55e';
             } else {
                 injectBtn.text = '$(error) 注入失败';
+                injectBtn.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+                injectBtn.color = '#ef4444';
             }
-            setTimeout(() => { injectBtn.text = '$(zap) Pro 注入'; }, 3000);
+            setTimeout(() => { injectBtn.text = '$(zap) Pro 注入'; injectBtn.backgroundColor = undefined; injectBtn.color = undefined; }, 3000);
         } catch (e) {
             statusMsg.dispose();
             injectBtn.text = '$(error) 注入异常';
-            setTimeout(() => { injectBtn.text = '$(zap) Pro 注入'; }, 3000);
+            injectBtn.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            injectBtn.color = '#ef4444';
+            setTimeout(() => { injectBtn.text = '$(zap) Pro 注入'; injectBtn.backgroundColor = undefined; injectBtn.color = undefined; }, 3000);
         }
     }));
     const injectBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
