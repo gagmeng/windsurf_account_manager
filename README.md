@@ -18,6 +18,7 @@
 - 🔧 **Machine ID 重置** — 内置重置工具
 - 🚀 **自动导入** — 启动时自动检测并导入当前登录账号
 - ⚙️ **切换设置** — 可配置是否自动刷新窗口
+- ⚡ **Pro 注入** — 状态栏一键向 Language Server 注入 Pro 计划状态并绕过本地限额检查
 
 ---
 
@@ -75,6 +76,7 @@ npx vsce package --allow-missing-repository
 
 - 首次切换账号会自动应用补丁并重启 Windsurf
 - Windsurf 更新后可能需要重新应用补丁
+- Pro 注入为运行时注入，Windsurf 重启后需要重新点击状态栏 `⚡ Pro 注入` 按钮
 
 ---
 
