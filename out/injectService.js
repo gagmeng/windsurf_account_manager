@@ -215,15 +215,16 @@ class InjectService {
         const results = [];
         try {
             const stdout = child_process.execSync(
-                `powershell -Command "Get-Process ${lsName} -EA SilentlyContinue | Select Id,@{N='Cmd';E={(Get-CimInstance Win32_Process -Filter \\"ProcessId=$($_.Id)\\").CommandLine}} | ConvertTo-Json"`,
+                `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*language_server*' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"`,
                 { timeout: 10000, encoding: 'utf-8' }
             );
             if (!stdout.trim()) return results;
-            let data = JSON.parse(stdout);
+            let data;
+            try { data = JSON.parse(stdout); } catch { return results; }
             if (!Array.isArray(data)) data = [data];
             for (const proc of data) {
-                const pid = proc.Id;
-                const cmd = proc.Cmd || '';
+                const pid = proc.ProcessId;
+                const cmd = proc.CommandLine || '';
                 const portMatch = cmd.match(/--port[=\s]+(\d+)/);
                 if (pid) results.push({ pid, port: portMatch ? parseInt(portMatch[1]) : null, cmdline: cmd });
             }
