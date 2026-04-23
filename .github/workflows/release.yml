@@ -35,13 +35,13 @@ jobs:
           echo "Updated package.json version to ${VERSION}"
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --omit=dev
 
       - name: Install vsce
         run: npm install -g @vscode/vsce
 
       - name: Package VSIX
-        run: vsce package --no-dependencies
+        run: vsce package
 
       - name: Get VSIX filename
         id: vsix
