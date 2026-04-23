@@ -1,0 +1,58 @@
+name: Release VSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: 1.7.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update version in package.json
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n');
+          "
+          echo "Updated package.json version to ${VERSION}"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Package VSIX
+        run: vsce package --no-dependencies
+
+      - name: Get VSIX filename
+        id: vsix
+        run: echo "filename=$(ls *.vsix)" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: v${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+          files: ${{ steps.vsix.outputs.filename }}
+          generate_release_notes: true
