@@ -1490,7 +1490,7 @@ class AccountPanelProvider {
     </div>
     <div class="toolbar-row" style="margin-top:6px;">
       <button class="toolbar-btn" onclick="injectPro()" title="点击执行 Pro 注入">⚡ Pro 注入</button>
-      <div class="toggle-container" style="margin:0;flex:1;justify-content:flex-end;">
+      <div class="toggle-container" style="margin:0;flex:1;justify-content:center;">
         <span class="toggle-label">切换后刷新窗口</span>
         <div id="refreshToggle" class="toggle-switch" onclick="toggleRefresh()"></div>
       </div>
