@@ -1466,6 +1466,31 @@ class AccountPanelProvider {
       color: var(--vscode-descriptionForeground);
       margin-bottom: 2px;
     }
+
+    /* === macOS Style Overrides === */
+    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', var(--vscode-font-family); padding: 10px 12px; }
+    .toolbar-btn { border-radius: 8px; font-weight: 500; padding: 7px 10px; display:flex; align-items:center; justify-content:center; gap:5px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+    .toolbar-btn.primary { box-shadow: 0 1px 4px rgba(0,0,0,0.18); }
+    .current-account { border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 8px 12px; }
+    .switch-next-btn { border-radius: 9px; font-weight: 500; letter-spacing: 0.2px; }
+    .account-item { border-radius: 9px; padding: 9px 11px; transition: all 0.12s cubic-bezier(0.25,0.46,0.45,0.94); }
+    .account-item:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
+    .account-item .mini-avatar { width: 30px; height: 30px; border-radius: 8px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .icon-btn { border-radius: 6px; width: 26px; height: 26px; }
+    .icon-btn:hover { transform: scale(1.08); }
+    .input { border-radius: 8px; padding: 8px 11px; }
+    .input:focus { box-shadow: 0 0 0 2.5px rgba(0,122,255,0.22); }
+    .btn { border-radius: 9px; font-weight: 500; }
+    .group-header { border-radius: 9px; }
+    .toggle-switch { border-radius: 14px; width: 44px; height: 24px; }
+    .toggle-switch::after { width: 20px; height: 20px; top: 2px; left: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.28); }
+    .toggle-switch.active::after { transform: translateX(20px); }
+    .toggle-switch.active { background: #34c759; }
+    .section { margin-bottom: 14px; }
+    .section-title { font-size: 10.5px; letter-spacing: 0.4px; }
+    .message { border-radius: 9px; }
+    .empty-state { padding: 32px 16px; }
+    .svg-icon { display:inline-flex; align-items:center; flex-shrink:0; }
   </style>
 </head>
 <body>
@@ -1476,20 +1501,20 @@ class AccountPanelProvider {
     <div id="currentAccount" class="current-account">
       <div class="no-account">加载中...</div>
     </div>
-    <button class="switch-next-btn" onclick="switchNextAccount()">⏭ 切换下一个账号 <span class="shortcut-hint" id="shortcutDisplay">Ctrl+Alt+K</span></button>
+    <button class="switch-next-btn" onclick="switchNextAccount()"><svg class="svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg> 切换下一个账号 <span class="shortcut-hint" id="shortcutDisplay">Ctrl+Alt+K</span></button>
   </div>
   
   <div class="section toolbar-section">
     <div class="toolbar-row">
-      <button class="toolbar-btn" onclick="resetMachineId()" title="重置机器码">🔄 重置机器码</button>
-      <button class="toolbar-btn primary" id="addBtn" onclick="showLoginForm()" title="添加账号">+ 添加账号</button>
+      <button class="toolbar-btn" onclick="resetMachineId()" title="重置机器码"><svg class="svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49,15a9,9,0,1,1-2.12-9.36L23,10"/></svg> 重置机器码</button>
+      <button class="toolbar-btn primary" id="addBtn" onclick="showLoginForm()" title="添加账号"><svg class="svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> 添加账号</button>
     </div>
     <div class="toolbar-row" style="margin-top:6px;">
-      <button class="toolbar-btn" onclick="exportAccounts()" title="导出所有账号信息到JSON文件">📤 导出账号</button>
-      <button class="toolbar-btn" onclick="importAccounts()" title="从JSON文件导入账号">📥 导入账号</button>
+      <button class="toolbar-btn" onclick="exportAccounts()" title="导出所有账号信息到JSON文件"><svg class="svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21,15v4a2,2,0,0,1-2,2H5a2,2,0,0,1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 导出账号</button>
+      <button class="toolbar-btn" onclick="importAccounts()" title="从JSON文件导入账号"><svg class="svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21,15v4a2,2,0,0,1-2,2H5a2,2,0,0,1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 导入账号</button>
     </div>
     <div class="toolbar-row" style="margin-top:6px;">
-      <button class="toolbar-btn" onclick="injectPro()" title="点击执行 Pro 注入">⚡ Pro 注入</button>
+      <button class="toolbar-btn" onclick="injectPro()" title="点击执行 Pro 注入"><svg class="svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg> Pro 注入</button>
       <div class="toggle-container" style="margin:0;flex:1;justify-content:center;">
         <span class="toggle-label">切换后刷新窗口</span>
         <div id="refreshToggle" class="toggle-switch" onclick="toggleRefresh()"></div>
@@ -1537,7 +1562,7 @@ class AccountPanelProvider {
   <div class="section account-list-section">
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>账号列表</span>
-      <button class="icon-btn" onclick="refreshAllQuotas()" title="一键刷新所有账号配额" style="font-size:12px;">🔄 刷新配额</button>
+      <button class="icon-btn" onclick="refreshAllQuotas()" title="一键刷新所有账号配额" style="width:auto;padding:3px 8px;font-size:11px;gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49,15a9,9,0,1,1-2.12-9.36L23,10"/></svg> 刷新配额</button>
     </div>
     <div class="search-box">
       <input type="text" id="searchInput" class="search-input" placeholder="搜索账号 (邮箱/名称)" oninput="handleSearch()">
@@ -1709,7 +1734,7 @@ class AccountPanelProvider {
       const el = document.getElementById('currentAccount');
       if (account) {
         const curEmail = account.email && account.email.includes('@') ? account.email : (account.name && account.name.includes('@') ? account.name : account.email);
-        el.innerHTML = \`<div class="current-account-row"><span class="badge">✓</span> \${curEmail || '未知账号'}</div>\`;
+        el.innerHTML = `<div class="current-account-row"><span class="badge"><svg style="vertical-align:-2px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg></span> ${curEmail || '未知账号'}</div>`;
       } else {
         el.innerHTML = '<div class="no-account">未登录</div>';
       }
@@ -1736,19 +1761,19 @@ class AccountPanelProvider {
       
       if (filteredAccounts.length === 0) {
         if (searchKeyword) {
-          el.innerHTML = \`
+          el.innerHTML = `
             <div class="empty-state">
-              <div class="icon">🔍</div>
-              <div>未找到匹配 "\${searchKeyword}" 的账号</div>
+              <div class="icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+              <div>未找到匹配 "${searchKeyword}" 的账号</div>
             </div>
-          \`;
+          `;
         } else {
-          el.innerHTML = \`
+          el.innerHTML = `
             <div class="empty-state">
-              <div class="icon">📭</div>
+              <div class="icon"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
               <div>暂无账号，点击上方添加</div>
             </div>
-          \`;
+          `;
         }
         return;
       }
@@ -1770,18 +1795,18 @@ class AccountPanelProvider {
       typeOrder.forEach(type => {
         if (groups[type] && groups[type].length > 0) {
           const isCollapsed = collapsedGroups[type];
-          html += \`
+          html += `
             <div class="account-group">
-              <div class="group-header \${isCollapsed ? 'collapsed' : ''}" onclick="toggleGroup('\${type}')">
+              <div class="group-header ${isCollapsed ? 'collapsed' : ''}" onclick="toggleGroup('${type}')">
                 <div class="group-left">
-                  <span class="type-dot dot-\${type.toLowerCase()}"></span>
-                  <span class="collapse-icon">\${isCollapsed ? '▶' : '▼'}</span>
-                  <span class="group-title">\${type.toUpperCase()} (\${groups[type].length})</span>
+                  <span class="type-dot dot-${type.toLowerCase()}"></span>
+                  <span class="collapse-icon">${isCollapsed ? '▶' : '▼'}</span>
+                  <span class="group-title">${type.toUpperCase()} (${groups[type].length})</span>
                 </div>
-                <button class="icon-btn" onclick="event.stopPropagation(); deleteAccountsByType('\${type}')" title="删除该类型所有账号">🗑️</button>
+                <button class="icon-btn" onclick="event.stopPropagation(); deleteAccountsByType('${type}')" title="删除该类型所有账号"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>
               </div>
-              <div class="account-group-items \${isCollapsed ? 'collapsed' : ''}">
-                \${groups[type].map(acc => {
+              <div class="account-group-items ${isCollapsed ? 'collapsed' : ''}">
+                ${groups[type].map(acc => {
                   const q = quotaCache[acc.id];
                   let quotaHtml = '';
                   if (q) {
@@ -1833,25 +1858,25 @@ class AccountPanelProvider {
                   }
                   const displayEmail = acc.email && acc.email.includes('@') ? acc.email : (acc.name && acc.name.includes('@') ? acc.name : acc.email);
                   const displayName = acc.email && acc.email.includes('@') ? (acc.name || '') : (acc.name && !acc.name.includes('@') ? acc.name : '');
-                  return \`
-                  <div class="account-item \${acc.email === currentEmail ? 'current' : ''}" 
-                       onclick="switchAccount('\${acc.id}')">
-                    <div class="mini-avatar type-\${(acc.accountType || 'other').toLowerCase()}">\${getInitial(displayEmail)}</div>
+                  return `
+                  <div class="account-item ${acc.email === currentEmail ? 'current' : ''}" 
+                       onclick="switchAccount('${acc.id}')">
+                    <div class="mini-avatar type-${(acc.accountType || 'other').toLowerCase()}">${getInitial(displayEmail)}</div>
                     <div class="info">
-                      <div class="email">\${displayEmail}</div>
-                      <div class="name">\${displayName}\${acc.planName ? ' · ' + acc.planName : ''}</div>
-                      \${quotaHtml}
+                      <div class="email">${displayEmail}</div>
+                      <div class="name">${displayName}${acc.planName ? ' · ' + acc.planName : ''}</div>
+                      ${quotaHtml}
                     </div>
                     <div class="actions">
-                      <button class="icon-btn" onclick="event.stopPropagation(); refreshAccountQuota('\${acc.id}')" title="查询配额">📊</button>
-                      <button class="icon-btn" onclick="event.stopPropagation(); copyApiKey('\${acc.id}')" title="复制账号信息">📋</button>
-                      <button class="icon-btn" onclick="event.stopPropagation(); deleteAccount('\${acc.id}')" title="删除">🗑️</button>
+                      <button class="icon-btn" onclick="event.stopPropagation(); refreshAccountQuota('${acc.id}')" title="查询配额"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></button>
+                      <button class="icon-btn" onclick="event.stopPropagation(); copyApiKey('${acc.id}')" title="复制账号信息"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5,15H4a2,2,0,0,1-2-2V4a2,2,0,0,1,2-2h9a2,2,0,0,1,2,2v1"/></svg></button>
+                      <button class="icon-btn" onclick="event.stopPropagation(); deleteAccount('${acc.id}')" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>
                     </div>
                   </div>
-                \`}).join('')}
+                `}).join('')}
               </div>
             </div>
-          \`;
+          `;
         }
       });
       
