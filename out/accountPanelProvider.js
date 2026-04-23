@@ -1482,10 +1482,10 @@ class AccountPanelProvider {
     .input:focus { box-shadow: 0 0 0 2.5px rgba(0,122,255,0.22); }
     .btn { border-radius: 9px; font-weight: 500; }
     .group-header { border-radius: 9px; }
-    .toggle-switch { border-radius: 14px; width: 44px; height: 24px; }
-    .toggle-switch::after { width: 20px; height: 20px; top: 2px; left: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.28); }
+    .toggle-switch { border-radius: 14px; width: 44px; height: 24px; background: rgba(120,120,128,0.25); border: 1px solid rgba(120,120,128,0.3); outline: none; }
+    .toggle-switch::after { width: 20px; height: 20px; top: 1px; left: 2px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); border-radius: 50%; }
     .toggle-switch.active::after { transform: translateX(20px); }
-    .toggle-switch.active { background: #34c759; }
+    .toggle-switch.active { background: #34c759; border-color: #2ab34a; }
     .section { margin-bottom: 14px; }
     .section-title { font-size: 10.5px; letter-spacing: 0.4px; }
     .message { border-radius: 9px; }
