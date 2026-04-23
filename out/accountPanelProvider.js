@@ -1734,7 +1734,7 @@ class AccountPanelProvider {
       const el = document.getElementById('currentAccount');
       if (account) {
         const curEmail = account.email && account.email.includes('@') ? account.email : (account.name && account.name.includes('@') ? account.name : account.email);
-        el.innerHTML = `<div class="current-account-row"><span class="badge"><svg style="vertical-align:-2px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg></span> ${curEmail || '未知账号'}</div>`;
+        el.innerHTML = \`<div class="current-account-row"><span class="badge"><svg style="vertical-align:-2px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg></span> \${curEmail || '未知账号'}</div>\`;
       } else {
         el.innerHTML = '<div class="no-account">未登录</div>';
       }
@@ -1761,19 +1761,9 @@ class AccountPanelProvider {
       
       if (filteredAccounts.length === 0) {
         if (searchKeyword) {
-          el.innerHTML = `
-            <div class="empty-state">
-              <div class="icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-              <div>未找到匹配 "${searchKeyword}" 的账号</div>
-            </div>
-          `;
+          el.innerHTML = '<div class="empty-state"><div class="icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div><div>未找到匹配 "' + searchKeyword + '" 的账号</div></div>';
         } else {
-          el.innerHTML = `
-            <div class="empty-state">
-              <div class="icon"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-              <div>暂无账号，点击上方添加</div>
-            </div>
-          `;
+          el.innerHTML = '<div class="empty-state"><div class="icon"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div>暂无账号，点击上方添加</div></div>';
         }
         return;
       }
@@ -1795,18 +1785,17 @@ class AccountPanelProvider {
       typeOrder.forEach(type => {
         if (groups[type] && groups[type].length > 0) {
           const isCollapsed = collapsedGroups[type];
-          html += `
-            <div class="account-group">
-              <div class="group-header ${isCollapsed ? 'collapsed' : ''}" onclick="toggleGroup('${type}')">
-                <div class="group-left">
-                  <span class="type-dot dot-${type.toLowerCase()}"></span>
-                  <span class="collapse-icon">${isCollapsed ? '▶' : '▼'}</span>
-                  <span class="group-title">${type.toUpperCase()} (${groups[type].length})</span>
-                </div>
-                <button class="icon-btn" onclick="event.stopPropagation(); deleteAccountsByType('${type}')" title="删除该类型所有账号"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>
-              </div>
-              <div class="account-group-items ${isCollapsed ? 'collapsed' : ''}">
-                ${groups[type].map(acc => {
+          html += '<div class="account-group">' +
+            '<div class="group-header ' + (isCollapsed ? 'collapsed' : '') + '" onclick="toggleGroup(\'' + type + '\')">' +
+            '<div class="group-left">' +
+            '<span class="type-dot dot-' + type.toLowerCase() + '"></span>' +
+            '<span class="collapse-icon">' + (isCollapsed ? '&#9658;' : '&#9660;') + '</span>' +
+            '<span class="group-title">' + type.toUpperCase() + ' (' + groups[type].length + ')</span>' +
+            '</div>' +
+            '<button class="icon-btn" onclick="event.stopPropagation(); deleteAccountsByType(\'' + type + '\')" title="删除该类型所有账号"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>' +
+            '</div>' +
+            '<div class="account-group-items ' + (isCollapsed ? 'collapsed' : '') + '">' +
+            groups[type].map(acc => {
                   const q = quotaCache[acc.id];
                   let quotaHtml = '';
                   if (q) {
@@ -1858,25 +1847,21 @@ class AccountPanelProvider {
                   }
                   const displayEmail = acc.email && acc.email.includes('@') ? acc.email : (acc.name && acc.name.includes('@') ? acc.name : acc.email);
                   const displayName = acc.email && acc.email.includes('@') ? (acc.name || '') : (acc.name && !acc.name.includes('@') ? acc.name : '');
-                  return `
-                  <div class="account-item ${acc.email === currentEmail ? 'current' : ''}" 
-                       onclick="switchAccount('${acc.id}')">
-                    <div class="mini-avatar type-${(acc.accountType || 'other').toLowerCase()}">${getInitial(displayEmail)}</div>
-                    <div class="info">
-                      <div class="email">${displayEmail}</div>
-                      <div class="name">${displayName}${acc.planName ? ' · ' + acc.planName : ''}</div>
-                      ${quotaHtml}
-                    </div>
-                    <div class="actions">
-                      <button class="icon-btn" onclick="event.stopPropagation(); refreshAccountQuota('${acc.id}')" title="查询配额"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></button>
-                      <button class="icon-btn" onclick="event.stopPropagation(); copyApiKey('${acc.id}')" title="复制账号信息"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5,15H4a2,2,0,0,1-2-2V4a2,2,0,0,1,2-2h9a2,2,0,0,1,2,2v1"/></svg></button>
-                      <button class="icon-btn" onclick="event.stopPropagation(); deleteAccount('${acc.id}')" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>
-                    </div>
-                  </div>
-                `}).join('')}
-              </div>
-            </div>
-          `;
+                  return '<div class="account-item ' + (acc.email === currentEmail ? 'current' : '') + '" onclick="switchAccount(\'' + acc.id + '\')">' +
+                    '<div class="mini-avatar type-' + (acc.accountType || 'other').toLowerCase() + '">' + getInitial(displayEmail) + '</div>' +
+                    '<div class="info">' +
+                    '<div class="email">' + displayEmail + '</div>' +
+                    '<div class="name">' + displayName + (acc.planName ? ' &middot; ' + acc.planName : '') + '</div>' +
+                    quotaHtml +
+                    '</div>' +
+                    '<div class="actions">' +
+                    '<button class="icon-btn" onclick="event.stopPropagation(); refreshAccountQuota(\'' + acc.id + '\')" title="查询配额"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></button>' +
+                    '<button class="icon-btn" onclick="event.stopPropagation(); copyApiKey(\'' + acc.id + '\')" title="复制账号信息"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5,15H4a2,2,0,0,1-2-2V4a2,2,0,0,1,2-2h9a2,2,0,0,1,2,2v1"/></svg></button>' +
+                    '<button class="icon-btn" onclick="event.stopPropagation(); deleteAccount(\'' + acc.id + '\')" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>' +
+                    '</div></div>';
+              }).join('') +
+              '</div>' +
+            '</div>';
         }
       });
       
