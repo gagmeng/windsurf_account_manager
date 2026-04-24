@@ -46,10 +46,11 @@ const injectService_1 = require("./injectService");
  * 账号面板提供者
  */
 class AccountPanelProvider {
-    constructor(_extensionUri, accountManager, accountSwitcher) {
+    constructor(_extensionUri, accountManager, accountSwitcher, outputChannel) {
         this._extensionUri = _extensionUri;
         this._accountManager = accountManager;
         this._accountSwitcher = accountSwitcher;
+        this._outputChannel = outputChannel || null;
         this._quotaCache = {};
     }
     /**
@@ -218,7 +219,11 @@ class AccountPanelProvider {
      */
     async _injectPro() {
         try {
-            this._sendMessage('info', '正在注入 Pro 实验...');
+            this._sendMessage('info', '正在注入 Pro 实验，请查看输出频道「账号管理」...');
+            if (this._outputChannel) {
+                this._outputChannel.show(true);
+                this._outputChannel.appendLine('=== Pro 注入开始 ' + new Date().toLocaleTimeString() + ' ===');
+            }
             // 获取当前账号的 apiKey
             let apiKey = '';
             try {
@@ -228,7 +233,8 @@ class AccountPanelProvider {
                 }
             } catch { }
             const injector = new injectService_1.InjectService((msg) => {
-                this._sendMessage('info', msg);
+                if (this._outputChannel) this._outputChannel.appendLine(msg);
+                console.log('[AceSwitch Inject]', msg);
             });
             const result = await injector.inject(apiKey);
             if (result.success) {
@@ -759,11 +765,14 @@ class AccountPanelProvider {
      * 生成 WebView HTML
      */
     _getHtmlForWebview(webview) {
+        const vscode = require('vscode');
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'panel.js'));
         return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; script-src ${webview.cspSource} 'unsafe-inline'; style-src ${webview.cspSource} 'unsafe-inline';">
   <title>账号管理</title>
   <style>
     * {
@@ -1494,6 +1503,7 @@ class AccountPanelProvider {
   </style>
 </head>
 <body>
+  <div id="jscheck" style="background:#e53e3e;color:#fff;padding:6px 10px;font-size:11px;border-radius:4px;margin-bottom:8px;">⚠ JS未加载 (v1.6.0-debug)</div>
   <div id="message" class="message"></div>
   
   <div class="section">
@@ -1576,463 +1586,7 @@ class AccountPanelProvider {
     </div>
   </div>
   
-  <script>
-    const vscode = acquireVsCodeApi();
-    let accounts = [];
-    let currentEmail = null;
-    let currentApiKey = null;
-    let currentName = null;
-    let searchKeyword = '';
-    let collapsedGroups = {}; // 记录分组折叠状态
-    let quotaCache = {}; // accountId -> quota data
-    
-    // 请求数据
-    vscode.postMessage({ type: 'getAccounts' });
-    vscode.postMessage({ type: 'getCurrentAccount' });
-    vscode.postMessage({ type: 'getRefreshSetting' });
-    vscode.postMessage({ type: 'getQuotaCache' });
-    // 配额将在 accountList + currentAccount 都就绪后自动查询
-    let _initReady = { accounts: false, current: false, quotaFetched: false };
-    function _checkAutoFetchQuota() {
-      if (_initReady.accounts && _initReady.current && !_initReady.quotaFetched) {
-        _initReady.quotaFetched = true;
-        // 如果缓存已有数据，跳过自动查询
-        if (Object.keys(quotaCache).length > 0) return;
-        vscode.postMessage({ type: 'fetchCurrentQuota' });
-      }
-    }
-    // 如果 currentQuota 比 accountList/currentAccount 先到，延迟重新匹配
-    function _rematchCurrentQuota() {
-      const q = quotaCache['__current__'];
-      if (!q) return;
-      let cur = _findCurrentAccount();
-      if (cur && !quotaCache[cur.id]) {
-        quotaCache[cur.id] = quotaCache['__current__'];
-      }
-    }
-    // 多策略匹配当前账号：email → name → apiKey
-    function _findCurrentAccount() {
-      let cur = null;
-      if (currentEmail) cur = accounts.find(a => a.email === currentEmail);
-      if (!cur && currentName) cur = accounts.find(a => a.name === currentName);
-      if (!cur && currentEmail) cur = accounts.find(a => a.name === currentEmail);
-      if (!cur && currentApiKey) cur = accounts.find(a => a.apiKey === currentApiKey);
-      return cur;
-    }
-    
-    let quotaLoading = false;
-    
-    function refreshCurrentQuota() {
-      if (quotaLoading) return;
-      quotaLoading = true;
-      vscode.postMessage({ type: 'fetchCurrentQuota' });
-    }
-    
-    function refreshAccountQuota(accountId) {
-      if (quotaLoading) return;
-      quotaLoading = true;
-      vscode.postMessage({ type: 'fetchQuota', accountId });
-    }
-    
-    function getBarColor(percent) {
-      if (percent > 50) return 'high';
-      if (percent > 20) return 'medium';
-      return 'low';
-    }
-    
-    
-    // 搜索处理函数
-    function handleSearch() {
-      searchKeyword = document.getElementById('searchInput').value.trim().toLowerCase();
-      renderAccountList();
-    }
-    
-    // 一键刷新所有账号配额
-    let _refreshPending = 0;
-    function refreshAllQuotas() {
-      if (_refreshPending > 0) return;
-      _refreshPending = 1 + accounts.length;
-      vscode.postMessage({ type: 'fetchCurrentQuota' });
-      accounts.forEach(acc => {
-        vscode.postMessage({ type: 'fetchQuota', accountId: acc.id });
-      });
-    }
-    
-    // 切换分组折叠
-    function toggleGroup(groupType) {
-      collapsedGroups[groupType] = !collapsedGroups[groupType];
-      renderAccountList();
-    }
-    
-    // 接收消息
-    window.addEventListener('message', event => {
-      const data = event.data;
-      
-      switch (data.type) {
-        case 'accountList':
-          accounts = data.accounts;
-          _initReady.accounts = true;
-          // 账号列表到达后，重新匹配 __current__ 缓存
-          if (quotaCache['__current__'] && accounts.length > 0) {
-            let cur = _findCurrentAccount();
-            if (cur && !quotaCache[cur.id]) {
-              quotaCache[cur.id] = quotaCache['__current__'];
-            }
-          }
-          renderAccountList();
-          _checkAutoFetchQuota();
-          _rematchCurrentQuota();
-          break;
-          
-        case 'currentAccount':
-          currentEmail = data.account?.email;
-          currentApiKey = data.account?.apiKey;
-          currentName = data.account?.name;
-          renderCurrentAccount(data.account);
-          renderAccountList();
-          _initReady.current = true;
-          _checkAutoFetchQuota();
-          _rematchCurrentQuota();
-          break;
-          
-        case 'message':
-          showMessage(data.msgType, data.text);
-          break;
-          
-        case 'refreshSetting':
-          updateRefreshToggle(data.value);
-          break;
-          
-        case 'quotaResult':
-          quotaLoading = false;
-          if (_refreshPending > 0) _refreshPending--;
-          if (data.accountId && data.quota) {
-            quotaCache[data.accountId] = data.quota;
-            renderAccountList();
-          }
-          break;
-          
-        case 'currentQuota':
-          quotaLoading = false;
-          if (_refreshPending > 0) _refreshPending--;
-          if (data.quota) {
-            quotaCache['__current__'] = data.quota;
-            let cur = _findCurrentAccount();
-            if (cur) { quotaCache[cur.id] = data.quota; }
-            renderAccountList();
-          }
-          break;
-      }
-    });
-    
-    function getInitial(str) {
-      if (!str) return '?';
-      return str.charAt(0).toUpperCase();
-    }
-
-    function renderCurrentAccount(account) {
-      const el = document.getElementById('currentAccount');
-      if (account) {
-        const curEmail = account.email && account.email.includes('@') ? account.email : (account.name && account.name.includes('@') ? account.name : account.email);
-        el.innerHTML = \`<div class="current-account-row"><span class="badge"><svg style="vertical-align:-2px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20,6 9,17 4,12"/></svg></span> \${curEmail || '未知账号'}</div>\`;
-      } else {
-        el.innerHTML = '<div class="no-account">未登录</div>';
-      }
-    }
-    
-    function renderAccountList() {
-      const el = document.getElementById('accountList');
-      const resultInfoEl = document.getElementById('searchResultInfo');
-      
-      // 根据搜索关键词过滤账号
-      let filteredAccounts = accounts;
-      if (searchKeyword) {
-        filteredAccounts = accounts.filter(acc => 
-          acc.email.toLowerCase().includes(searchKeyword) ||
-          (acc.name && acc.name.toLowerCase().includes(searchKeyword))
-        );
-        
-        // 显示搜索结果信息
-        resultInfoEl.style.display = 'block';
-        resultInfoEl.textContent = '找到 ' + filteredAccounts.length + ' 个匹配账号';
-      } else {
-        resultInfoEl.style.display = 'none';
-      }
-      
-      if (filteredAccounts.length === 0) {
-        if (searchKeyword) {
-          el.innerHTML = '<div class="empty-state"><div class="icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div><div>未找到匹配 "' + searchKeyword + '" 的账号</div></div>';
-        } else {
-          el.innerHTML = '<div class="empty-state"><div class="icon"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div>暂无账号，点击上方添加</div></div>';
-        }
-        return;
-      }
-      
-      // 按 accountType 分组
-      const groups = {};
-      filteredAccounts.forEach(acc => {
-        const type = acc.accountType || 'OTHER';
-        if (!groups[type]) {
-          groups[type] = [];
-        }
-        groups[type].push(acc);
-      });
-      
-      // 按照固定顺序排列组
-      const typeOrder = ['enterprise', 'teams', 'pro', 'trial', 'free', 'OTHER'];
-      let html = '';
-      
-      typeOrder.forEach(type => {
-        if (groups[type] && groups[type].length > 0) {
-          const isCollapsed = collapsedGroups[type];
-          html += '<div class="account-group">' +
-            '<div class="group-header ' + (isCollapsed ? 'collapsed' : '') + '" onclick="toggleGroup(\'' + type + '\')">' +
-            '<div class="group-left">' +
-            '<span class="type-dot dot-' + type.toLowerCase() + '"></span>' +
-            '<span class="collapse-icon">' + (isCollapsed ? '&#9658;' : '&#9660;') + '</span>' +
-            '<span class="group-title">' + type.toUpperCase() + ' (' + groups[type].length + ')</span>' +
-            '</div>' +
-            '<button class="icon-btn" onclick="event.stopPropagation(); deleteAccountsByType(\'' + type + '\')" title="删除该类型所有账号"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>' +
-            '</div>' +
-            '<div class="account-group-items ' + (isCollapsed ? 'collapsed' : '') + '">' +
-            groups[type].map(acc => {
-                  const q = quotaCache[acc.id];
-                  let quotaHtml = '';
-                  if (q) {
-                    quotaHtml = '<div class="quota-inline">';
-                    // 优先显示 quotaUsage (日/周用量百分比) 
-                    if (q.quotaUsage) {
-                      const dUsed = Math.round(100 - (q.quotaUsage.dailyRemainingPercent || 0));
-                      const wUsed = Math.round(100 - (q.quotaUsage.weeklyRemainingPercent || 0));
-                      const label1 = '日';
-                      const label2 = '周';
-                      quotaHtml += '<div class="quota-inline-row"><span class="quota-inline-label">' + label1 + '</span><div class="quota-inline-bar"><div class="quota-inline-bar-fill ' + getBarColor(100 - dUsed) + '" style="width:' + dUsed + '%"></div></div><span class="quota-inline-val">' + dUsed + '%</span></div>';
-                      quotaHtml += '<div class="quota-inline-row"><span class="quota-inline-label">' + label2 + '</span><div class="quota-inline-bar"><div class="quota-inline-bar-fill ' + getBarColor(100 - wUsed) + '" style="width:' + wUsed + '%"></div></div><span class="quota-inline-val">' + wUsed + '%</span></div>';
-                      // 日/周重置时间
-                      if (q.quotaUsage.dailyResetAtUnix > 0) {
-                        const dr = new Date(q.quotaUsage.dailyResetAtUnix * 1000);
-                        quotaHtml += '<div class="quota-inline-expiry">日重置: ' + dr.toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) + '</div>';
-                      }
-                      if (q.quotaUsage.weeklyResetAtUnix > 0) {
-                        const wr = new Date(q.quotaUsage.weeklyResetAtUnix * 1000);
-                        quotaHtml += '<div class="quota-inline-expiry">周重置: ' + wr.toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) + '</div>';
-                      }
-                    } else if (q.billingStrategy === 'credits') {
-                      // 明确的 Credits 模式: 显示 $余额
-                      let totalRem = 0;
-                      if (q.promptCredits) totalRem += q.promptCredits.remaining;
-                      if (q.flowCredits) totalRem += q.flowCredits.remaining;
-                      const bal = Math.floor(totalRem / 10) / 10;
-                      quotaHtml += '<div class="quota-inline-row"><span class="quota-inline-label" style="color:#4ec9b0;font-weight:bold;">$' + bal + '</span></div>';
-                    } else if (q.promptCredits || q.flowCredits) {
-                      // 非 credits 模式但无 quotaUsage: 用 remaining/total 百分比显示
-                      if (q.promptCredits && q.promptCredits.total > 0) {
-                        const pctUsed = Math.round((q.promptCredits.used / q.promptCredits.total) * 100);
-                        quotaHtml += '<div class="quota-inline-row"><span class="quota-inline-label">提示</span><div class="quota-inline-bar"><div class="quota-inline-bar-fill ' + getBarColor(100 - pctUsed) + '" style="width:' + pctUsed + '%"></div></div><span class="quota-inline-val">' + pctUsed + '%</span></div>';
-                      }
-                      if (q.flowCredits && q.flowCredits.total > 0) {
-                        const pctUsed = Math.round((q.flowCredits.used / q.flowCredits.total) * 100);
-                        quotaHtml += '<div class="quota-inline-row"><span class="quota-inline-label">Flow</span><div class="quota-inline-bar"><div class="quota-inline-bar-fill ' + getBarColor(100 - pctUsed) + '" style="width:' + pctUsed + '%"></div></div><span class="quota-inline-val">' + pctUsed + '%</span></div>';
-                      }
-                    }
-                    // 到期日期
-                    if (q.endAt) {
-                      const d = new Date(q.endAt);
-                      quotaHtml += '<div class="quota-inline-expiry">到期: ' + d.toLocaleDateString('zh-CN') + '</div>';
-                    } else if (q.resetAt) {
-                      const d = new Date(q.resetAt);
-                      quotaHtml += '<div class="quota-inline-expiry">到期: ' + d.toLocaleDateString('zh-CN') + '</div>';
-                    }
-                    quotaHtml += '</div>';
-                  }
-                  const displayEmail = acc.email && acc.email.includes('@') ? acc.email : (acc.name && acc.name.includes('@') ? acc.name : acc.email);
-                  const displayName = acc.email && acc.email.includes('@') ? (acc.name || '') : (acc.name && !acc.name.includes('@') ? acc.name : '');
-                  return '<div class="account-item ' + (acc.email === currentEmail ? 'current' : '') + '" onclick="switchAccount(\'' + acc.id + '\')">' +
-                    '<div class="mini-avatar type-' + (acc.accountType || 'other').toLowerCase() + '">' + getInitial(displayEmail) + '</div>' +
-                    '<div class="info">' +
-                    '<div class="email">' + displayEmail + '</div>' +
-                    '<div class="name">' + displayName + (acc.planName ? ' &middot; ' + acc.planName : '') + '</div>' +
-                    quotaHtml +
-                    '</div>' +
-                    '<div class="actions">' +
-                    '<button class="icon-btn" onclick="event.stopPropagation(); refreshAccountQuota(\'' + acc.id + '\')" title="查询配额"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></button>' +
-                    '<button class="icon-btn" onclick="event.stopPropagation(); copyApiKey(\'' + acc.id + '\')" title="复制账号信息"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5,15H4a2,2,0,0,1-2-2V4a2,2,0,0,1,2-2h9a2,2,0,0,1,2,2v1"/></svg></button>' +
-                    '<button class="icon-btn" onclick="event.stopPropagation(); deleteAccount(\'' + acc.id + '\')" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg></button>' +
-                    '</div></div>';
-              }).join('') +
-              '</div>' +
-            '</div>';
-        }
-      });
-      
-      el.innerHTML = html;
-    }
-    
-    function deleteAccountsByType(accountType) {
-      vscode.postMessage({ type: 'confirmDeleteByType', accountType });
-    }
-    
-    function showLoginForm() {
-      document.getElementById('addAccountSection').style.display = '';
-      document.getElementById('loginForm').classList.add('show');
-      document.getElementById('manualForm').classList.remove('show');
-      document.getElementById('loginEmailInput').focus();
-    }
-    
-    function showManualForm() {
-      document.getElementById('addAccountSection').style.display = '';
-      document.getElementById('manualForm').classList.add('show');
-      document.getElementById('loginForm').classList.remove('show');
-      document.getElementById('manualEmailInput').focus();
-    }
-    
-    function switchToManual() {
-      document.getElementById('loginForm').classList.remove('show');
-      document.getElementById('manualForm').classList.add('show');
-      document.getElementById('manualEmailInput').focus();
-    }
-    
-    function switchToLogin() {
-      document.getElementById('manualForm').classList.remove('show');
-      document.getElementById('loginForm').classList.add('show');
-      document.getElementById('loginEmailInput').focus();
-    }
-    
-    function cancelAdd() {
-      document.getElementById('loginForm').classList.remove('show');
-      document.getElementById('manualForm').classList.remove('show');
-      document.getElementById('addAccountSection').style.display = 'none';
-      // 清空登录表单
-      document.getElementById('loginEmailInput').value = '';
-      document.getElementById('loginPasswordInput').value = '';
-      // 清空手动表单
-      document.getElementById('manualEmailInput').value = '';
-      document.getElementById('manualNameInput').value = '';
-      document.getElementById('manualApiKeyInput').value = '';
-      document.getElementById('manualApiServerUrlInput').value = '';
-      document.getElementById('manualAccountTypeInput').value = '';
-    }
-    
-    function submitLogin() {
-      const email = document.getElementById('loginEmailInput').value.trim();
-      const password = document.getElementById('loginPasswordInput').value;
-      
-      if (!email || !password) {
-        showMessage('error', '请输入邮箱和密码');
-        return;
-      }
-      
-      vscode.postMessage({ type: 'addAccountByLogin', email, password, accountType: '' });
-      cancelAdd();
-    }
-    
-    function submitManual() {
-      const email = document.getElementById('manualEmailInput').value.trim();
-      const name = document.getElementById('manualNameInput').value.trim();
-      const apiKey = document.getElementById('manualApiKeyInput').value.trim();
-      const apiServerUrl = document.getElementById('manualApiServerUrlInput').value.trim();
-      const accountType = document.getElementById('manualAccountTypeInput').value;
-      
-      if (!email || !apiKey) {
-        showMessage('error', '请输入邮箱和 API Key');
-        return;
-      }
-      
-      vscode.postMessage({ 
-        type: 'addAccountManual', 
-        email, 
-        name, 
-        apiKey, 
-        apiServerUrl,
-        accountType
-      });
-      cancelAdd();
-    }
-    
-    function switchAccount(accountId) {
-      const acc = accounts.find(a => a.id === accountId);
-      if (acc && acc.email === currentEmail) {
-        showMessage('info', '已经是当前账号');
-        return;
-      }
-      vscode.postMessage({ type: 'switchAccount', accountId });
-    }
-    
-    function switchNextAccount() {
-      vscode.postMessage({ type: 'switchNextAccount' });
-    }
-    
-    function copyApiKey(accountId) {
-      vscode.postMessage({ type: 'copyApiKey', accountId });
-    }
-    
-    function deleteAccount(accountId) {
-      vscode.postMessage({ type: 'confirmDelete', accountId });
-    }
-    
-    function showMessage(type, text) {
-      const el = document.getElementById('message');
-      el.className = 'message show ' + type;
-      el.textContent = text;
-      
-      if (type !== 'info') {
-        setTimeout(() => {
-          el.classList.remove('show');
-        }, 3000);
-      }
-    }
-    
-    let refreshOnSwitch = true;
-    
-    function updateRefreshToggle(value) {
-      refreshOnSwitch = value;
-      const toggle = document.getElementById('refreshToggle');
-      if (value) {
-        toggle.classList.add('active');
-      } else {
-        toggle.classList.remove('active');
-      }
-    }
-    
-    function toggleRefresh() {
-      refreshOnSwitch = !refreshOnSwitch;
-      updateRefreshToggle(refreshOnSwitch);
-      vscode.postMessage({ type: 'setRefreshSetting', value: refreshOnSwitch });
-    }
-    
-    function resetMachineId() {
-      vscode.postMessage({ type: 'resetMachineId' });
-    }
-    
-    function injectPro() {
-      vscode.postMessage({ type: 'injectPro' });
-    }
-    
-    function exportAccounts() {
-      vscode.postMessage({ type: 'exportAccounts' });
-    }
-    
-    function importAccounts() {
-      vscode.postMessage({ type: 'importAccounts' });
-    }
-    
-    // 回车提交 - 登录模式
-    document.getElementById('loginPasswordInput').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') submitLogin();
-    });
-    
-    // 回车提交 - 手动模式
-    document.getElementById('manualApiKeyInput').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') submitManual();
-    });
-    
-    // 根据平台显示快捷键
-    (function() {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const el = document.getElementById('shortcutDisplay');
-      if (el) { el.textContent = isMac ? '⌘ + ⌥ + K' : 'Ctrl + Alt + K'; }
-    })();
-  </script>
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
     }

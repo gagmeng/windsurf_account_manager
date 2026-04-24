@@ -59,11 +59,14 @@ let panelProvider;
  */
 async function activate(context) {
     console.log('[AceSwitch] 插件已激活');
+    // 创建输出频道
+    const outputChannel = vscode.window.createOutputChannel('账号管理');
+    context.subscriptions.push(outputChannel);
     // 初始化管理器
     const accountManager = new accountManager_1.AccountManager(context);
     const accountSwitcher = new accountSwitcher_1.AccountSwitcher();
     // 创建并注册侧边栏面板
-    panelProvider = new accountPanelProvider_1.AccountPanelProvider(context.extensionUri, accountManager, accountSwitcher);
+    panelProvider = new accountPanelProvider_1.AccountPanelProvider(context.extensionUri, accountManager, accountSwitcher, outputChannel);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(accountPanelProvider_1.AccountPanelProvider.viewType, panelProvider));
     // 注册刷新命令
     context.subscriptions.push(vscode.commands.registerCommand('aceSwitch.refreshPanel', () => {
@@ -74,7 +77,10 @@ async function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('aceSwitch.injectPro', async () => {
         const statusMsg = vscode.window.setStatusBarMessage('$(loading~spin) 正在注入...');
         try {
+            outputChannel.show(true);
+            outputChannel.appendLine('=== Pro 注入开始 ' + new Date().toLocaleTimeString() + ' ===');
             const injector = new injectService_1.InjectService((msg) => {
+                outputChannel.appendLine(msg);
                 console.log('[AceSwitch]', msg);
             });
             let apiKey = '';

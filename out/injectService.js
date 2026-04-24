@@ -40,6 +40,38 @@ const FORCE_ENABLE = [
 ];
 
 /**
+ * 向本地 LS 发送 Connect-protocol JSON 请求（支持自定义 hostname）
+ */
+function lsCallHost(hostname, port, method, payload, csrfToken, timeout = 10000) {
+    return new Promise((resolve) => {
+        const body = JSON.stringify(payload || {});
+        const headers = {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'Content-Length': Buffer.byteLength(body),
+        };
+        if (csrfToken) headers['x-codeium-csrf-token'] = csrfToken;
+        const req = http.request({
+            hostname, port,
+            path: `/${LS_SERVICE}/${method}`,
+            method: 'POST',
+            headers,
+            timeout,
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try { resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data: JSON.parse(data || '{}') }); }
+                catch { resolve({ ok: false, status: res.statusCode, data: { raw: data.substring(0, 200) } }); }
+            });
+        });
+        req.on('error', () => resolve({ ok: false, status: 0, data: {} }));
+        req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, data: {} }); });
+        req.write(body); req.end();
+    });
+}
+
+/**
  * 向本地 LS 发送 Connect-protocol JSON 请求
  */
 function lsCall(port, method, payload, csrfToken, timeout = 10000) {
@@ -94,6 +126,16 @@ function buildMeta(apiKey) {
 }
 
 /**
+ * 安全执行命令，无论 execSync 返回 Buffer 还是 string 都正确处理
+ */
+function safeExec(cmd, opts = {}) {
+    const result = child_process.execSync(cmd, { timeout: 10000, ...opts });
+    if (Buffer.isBuffer(result)) return result.toString('utf-8');
+    if (typeof result === 'string') return result;
+    return String(result || '');
+}
+
+/**
  * 从 vscdb 中读取当前登录的 apiKey (同 Python 版 get_active_login_key)
  * 使用项目已有的 sql.js 依赖，兼容插件沙箱环境
  */
@@ -139,9 +181,9 @@ function discoverApiKey() {
     for (const dbPath of dbPaths) {
         try {
             if (!fs.existsSync(dbPath)) continue;
-            const result = child_process.execSync(
+            const result = safeExec(
                 `sqlite3 "${dbPath}" "SELECT value FROM ItemTable WHERE key='windsurfAuthStatus'" 2>/dev/null`,
-                { timeout: 5000, encoding: 'utf-8' }
+                { timeout: 5000 }
             ).trim();
             if (!result) continue;
             const obj = JSON.parse(result);
@@ -195,7 +237,7 @@ class InjectService {
         // Fallback: ps
         if (results.length === 0) {
             try {
-                const stdout = child_process.execSync('ps axww -o pid=,command=', { timeout: 10000, encoding: 'utf-8' });
+                const stdout = safeExec('ps axww -o pid=,command=', { timeout: 10000 });
                 for (const line of stdout.split('\n')) {
                     if (!line.includes(lsName)) continue;
                     const parts = line.trim().split(/\s+/);
@@ -213,22 +255,81 @@ class InjectService {
 
     _findProcessesWindows(lsName) {
         const results = [];
-        try {
-            const stdout = child_process.execSync(
-                `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*language_server*' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"`,
-                { timeout: 10000, encoding: 'utf-8' }
-            );
-            if (!stdout.trim()) return results;
-            let data;
-            try { data = JSON.parse(stdout); } catch { return results; }
+        const seen = new Set();
+        const addProcs = (data) => {
+            if (!data) return;
             if (!Array.isArray(data)) data = [data];
             for (const proc of data) {
                 const pid = proc.ProcessId;
+                if (!pid || seen.has(pid)) continue;
+                seen.add(pid);
                 const cmd = proc.CommandLine || '';
                 const portMatch = cmd.match(/--port[=\s]+(\d+)/);
-                if (pid) results.push({ pid, port: portMatch ? parseInt(portMatch[1]) : null, cmdline: cmd });
+                results.push({ pid, port: portMatch ? parseInt(portMatch[1]) : null, cmdline: cmd });
             }
-        } catch { }
+        };
+        // Method 1a: Search by Name (simplified Where-Object, no $_ needed)
+        try {
+            const stdout = safeExec(
+                `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object Name -like '*language_server*' | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"`,
+                { timeout: 15000 }
+            );
+            const trimmed = stdout ? stdout.trim().replace(/^\uFEFF/, '') : '';
+            this.log(`  [M1a] stdout长度=${trimmed.length} 前50=${trimmed.substring(0,50)}`);
+            if (trimmed) { try { addProcs(JSON.parse(trimmed)); } catch(e) { this.log(`  [M1a] JSON解析失败: ${e.message}`); } }
+        } catch(e) { this.log(`  [M1a] execSync失败: ${e.message}`); }
+        this.log(`  [M1a] 结果数=${results.length}`);
+        // Method 1b: PS1 file approach
+        if (results.length === 0) {
+            try {
+                const tmpFile = path.join(os.tmpdir(), '_ws_ls_find.ps1');
+                fs.writeFileSync(tmpFile, `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*language_server*' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress`, 'utf-8');
+                const stdout = safeExec(
+                    `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`,
+                    { timeout: 15000 }
+                );
+                try { fs.unlinkSync(tmpFile); } catch { }
+                const trimmed = stdout ? stdout.trim().replace(/^\uFEFF/, '') : '';
+                this.log(`  [M1b] stdout长度=${trimmed.length}`);
+                if (trimmed) { try { addProcs(JSON.parse(trimmed)); } catch(e) { this.log(`  [M1b] JSON解析失败: ${e.message}`); } }
+            } catch(e) { this.log(`  [M1b] 失败: ${e.message.substring(0,80)}`); }
+        }
+        if (results.length > 0) return results;
+        // Method 2: WMIC
+        try {
+            const stdout = safeExec(
+                `wmic process where "CommandLine like '%language_server%'" get ProcessId,CommandLine /format:csv`,
+                { timeout: 10000 }
+            );
+            this.log(`  [M2] wmic行数=${stdout.split('\n').length}`);
+            for (const line of stdout.split('\n')) {
+                const parts = line.trim().split(',');
+                if (parts.length < 3) continue;
+                const cmd = parts.slice(1, -1).join(',');
+                const pidStr = parts[parts.length - 1];
+                const pid = parseInt(pidStr);
+                if (!pid || !cmd.includes('language_server')) continue;
+                const portMatch = cmd.match(/--port[=\s]+(\d+)/);
+                results.push({ pid, port: portMatch ? parseInt(portMatch[1]) : null, cmdline: cmd });
+            }
+        } catch(e) { this.log(`  [M2] wmic失败: ${e.message.substring(0,80)}`); }
+        if (results.length > 0) return results;
+        // Method 3: tasklist
+        try {
+            const tl = safeExec('tasklist /FO CSV /NH', { timeout: 5000 });
+            const lines = tl.split('\n');
+            this.log(`  [M3] tasklist总行数=${lines.length}`);
+            const lsLines = lines.filter(l => /language_server/i.test(l));
+            this.log(`  [M3] 含language_server行数=${lsLines.length} 示例=${lsLines[0]||'无'}`);
+            const lsPids = [];
+            for (const line of lsLines) {
+                const m = line.match(/"([^"]+)","(\d+)"/); 
+                if (m) lsPids.push({ pid: parseInt(m[2]), cmdline: m[1] });
+            }
+            for (const p of lsPids) {
+                results.push({ pid: p.pid, port: null, cmdline: p.cmdline });
+            }
+        } catch(e) { this.log(`  [M3] tasklist失败: ${e.message.substring(0,80)}`); }
         return results;
     }
 
@@ -306,18 +407,18 @@ public class PebReader {
 "@
 Write-Output ([PebReader]::GetEnv(${pid},'WINDSURF_CSRF_TOKEN'))
 `, 'utf-8');
-                const stdout = child_process.execSync(
+                const stdout = safeExec(
                     `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmpPs1}"`,
-                    { timeout: 15000, encoding: 'utf-8' }
+                    { timeout: 15000 }
                 ).trim();
                 try { fs.unlinkSync(tmpPs1); } catch {}
                 if (stdout) return stdout;
             } catch { }
             // Fallback: 从进程命令行提取
             try {
-                const stdout = child_process.execSync(
+                const stdout = safeExec(
                     `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
-                    { timeout: 5000, encoding: 'utf-8' }
+                    { timeout: 5000 }
                 );
                 const match = stdout.match(/WINDSURF_CSRF_TOKEN[=]([^\s"]+)/);
                 if (match) return match[1];
@@ -342,7 +443,7 @@ Write-Output ([PebReader]::GetEnv(${pid},'WINDSURF_CSRF_TOKEN'))
         if (process.platform === 'win32') {
             // Windows: netstat -ano
             try {
-                const stdout = child_process.execSync('netstat -ano', { timeout: 10000, encoding: 'utf-8' });
+                const stdout = safeExec('netstat -ano', { timeout: 10000 });
                 for (const line of stdout.split('\n')) {
                     if (!line.includes('LISTENING')) continue;
                     const parts = line.trim().split(/\s+/);
@@ -355,7 +456,7 @@ Write-Output ([PebReader]::GetEnv(${pid},'WINDSURF_CSRF_TOKEN'))
         }
         // Linux: ss
         try {
-            const stdout = child_process.execSync(`ss -tlnp`, { timeout: 5000, encoding: 'utf-8' });
+            const stdout = safeExec('ss -tlnp', { timeout: 5000 });
             for (const line of stdout.split('\n')) {
                 if (!line.includes(`pid=${pid},`)) continue;
                 const match = line.match(/:(\d+)\s/);
@@ -388,6 +489,48 @@ Write-Output ([PebReader]::GetEnv(${pid},'WINDSURF_CSRF_TOKEN'))
     }
 
     /**
+     * 扫描所有本地监听端口寻找活跃的 LS
+     */
+    async _scanLsPorts(csrfToken) {
+        const ports = new Set();
+        try {
+            const cmd = process.platform === 'win32' ? 'netstat -ano' : 'ss -tlnp';
+            const stdout = safeExec(cmd, { timeout: 5000 });
+            for (const line of stdout.split('\n')) {
+                if (!line.includes('LISTEN')) continue;
+                const m = line.match(/:(\d+)\s+/); // Fix regex bug: added \s+ instead of \s
+                if (m) {
+                    const port = parseInt(m[1]);
+                    if (port > 1024 && port < 65535) ports.add(port);
+                }
+            }
+        } catch(e) { this.log(`  [scan] netstat失败: ${e.message.substring(0,80)}`); }
+        this.log(`  [scan] netstat发现监听端口数: ${ports.size}`);
+        if (ports.size > 0) {
+            this.log(`  [scan] 端口样本: ${Array.from(ports).slice(0,10).join(',')}`);
+        }
+        // 探测所有监听端口（同时尝试 127.0.0.1 和 ::1），并发 20 个，超时 800ms
+        const portList = Array.from(ports);
+        const hosts = ['127.0.0.1', '::1'];
+        const chunkSize = 20;
+        for (let i = 0; i < portList.length; i += chunkSize) {
+            const chunk = portList.slice(i, i + chunkSize);
+            for (const host of hosts) {
+                const results = await Promise.all(
+                    chunk.map(port => lsCallHost(host, port, 'Heartbeat', { metadata: {} }, csrfToken, 800))
+                );
+                for (let j = 0; j < results.length; j++) {
+                    if (results[j].ok || (results[j].status > 0 && results[j].status < 500)) {
+                        this.log(`  [scan] 命中 ${host}:${chunk[j]} status=${results[j].status}`);
+                        return chunk[j];
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * 一键注入
      */
     async inject(apiKey) {
@@ -403,34 +546,68 @@ Write-Output ([PebReader]::GetEnv(${pid},'WINDSURF_CSRF_TOKEN'))
             }
         }
         this.log('🔍 正在查找 Language Server 进程...');
-        const procs = this.findAllProcesses();
+        let procs = this.findAllProcesses();
         if (procs.length === 0) {
-            this.log('❌ 未找到 Windsurf Language Server 进程');
-            return { success: false, error: '未找到 LS 进程，请确认 Windsurf 已启动' };
+            this.log('⚠️ 进程名匹配失败，尝试端口扫描...');
+            // 端口扫描兜底：扫描常用 LS 端口范围
+            const csrf = this.readCsrfFromFile();
+            const scanPort = await this._scanLsPorts(csrf);
+            if (scanPort) {
+                this.log(`📡 端口扫描发现 LS: port=${scanPort}`);
+                procs = [{ pid: null, port: scanPort, cmdline: '(via port scan)' }];
+            } else {
+                this.log('❌ 未找到 Windsurf Language Server 进程（进程名扫描 + 端口扫描均失败）');
+                this.log('💡 提示: 请确保 Windsurf 已打开并加载过 AI 功能');
+                return { success: false, error: '未找到 LS 进程，请确认 Windsurf 已启动' };
+            }
         }
         this.log(`📡 发现 ${procs.length} 个 LS 进程`);
+        procs.forEach((p, i) => {
+            const cmdPreview = (p.cmdline || '').substring(0, 120);
+            this.log(`  [${i+1}] PID=${p.pid} port=${p.port} cmd=${cmdPreview}`);
+        });
+
+        // 提前收集所有 CSRF（优先取有 CSRF 的那个）
+        let globalCsrf = this.readCsrfFromFile();
+        if (!globalCsrf) {
+            for (const p of procs) {
+                if (p.pid) {
+                    const c = this.readCsrfFromProcess(p.pid);
+                    if (c) { globalCsrf = c; break; }
+                }
+            }
+        }
+        this.log(`  🔐 全局 CSRF: ${globalCsrf ? globalCsrf.substring(0, 8) + '...' : '未找到'}`);
 
         let successCount = 0;
         for (let i = 0; i < procs.length; i++) {
             const proc = procs[i];
             let port = proc.port;
             const pid = proc.pid;
-
-            // 获取 CSRF
-            let csrf = this.readCsrfFromFile();
-            if (!csrf && pid) csrf = this.readCsrfFromProcess(pid);
-            this.log(`  🔐 CSRF: ${csrf ? csrf.substring(0, 8) + '...' : '未找到'}`);
+            let csrf = globalCsrf;
 
             // 端口探测
             if (!port && pid) {
                 const listenPorts = this.getListenPorts(pid);
+                this.log(`  [${i+1}] PID=${pid} netstat监听端口: [${listenPorts.join(',')}]`);
                 port = await this.probePort(listenPorts, csrf);
+                if (!port && listenPorts.length > 0) {
+                    this.log(`  [${i+1}] 端口响应探测失败，端口存在但无 LS 响应`);
+                }
                 if (!port) {
-                    this.log(`⚠️ [${i + 1}/${procs.length}] PID=${pid} 端口探测失败，跳过`);
+                    this.log(`⚠️ [${i + 1}/${procs.length}] PID=${pid} 端口探测失败，尝试全局端口扫描...`);
+                    port = await this._scanLsPorts(csrf);
+                    if (port) this.log(`  📡 全局扫描发现可用端口: ${port}`);
+                }
+                if (!port) {
+                    this.log(`⚠️ [${i + 1}/${procs.length}] PID=${pid} 全部探测失败，跳过`);
                     continue;
                 }
             }
-            if (!port) continue;
+            if (!port) {
+                this.log(`⚠️ [${i + 1}/${procs.length}] 无 port 无 pid，跳过`);
+                continue;
+            }
 
             this.log(`🔧 [${i + 1}/${procs.length}] port=${port} pid=${pid}`);
 
